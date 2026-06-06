@@ -12679,6 +12679,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
     if (this.timelineContainer) {
       this.timelineContainer.scrollTop = savedScrollTop;
     }
+    this.updateVisibleDateLabel();
   }
   /**
    * Main render function - sets up the infinite scroll container
@@ -12723,6 +12724,8 @@ var TimelineView = class extends import_obsidian5.ItemView {
     title.createSpan({ text: "Timeline" });
     this.visibleDateLabel = titleSection.createSpan("timeline-visible-date");
     this.visibleDateLabel.setText("");
+    this.visibleDateTotal = titleSection.createSpan("timeline-day-total");
+    this.visibleDateTotal.setText("");
     const controls = header.createDiv("timeline-header-controls");
     const todayBtn = controls.createEl("button", {
       text: "Today",
@@ -12816,6 +12819,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
    * Update the visible date label based on scroll position
    */
   updateVisibleDateLabel() {
+    var _a;
     if (!this.timelineContainer || !this.visibleDateLabel)
       return;
     const scrollTop = this.timelineContainer.scrollTop;
@@ -12830,6 +12834,12 @@ var TimelineView = class extends import_obsidian5.ItemView {
     bottomDate.setDate(bottomDate.getDate() + bottomDayIndex);
     const label = this.formatVisibleDateRange(topDate, bottomDate);
     this.visibleDateLabel.setText(label);
+    if (this.visibleDateTotal) {
+      const sameDay = topDate.toDateString() === bottomDate.toDateString();
+      const entries = sameDay ? (_a = this.entriesByDate.get(TableParser.getDateString(topDate))) != null ? _a : [] : [];
+      const totalMinutes = entries.reduce((sum, entry) => sum + entry.durationMinutes, 0);
+      this.visibleDateTotal.setText(totalMinutes > 0 ? `\xB7 ${this.formatDuration(totalMinutes)}` : "");
+    }
   }
   /**
    * Format the visible date range for display

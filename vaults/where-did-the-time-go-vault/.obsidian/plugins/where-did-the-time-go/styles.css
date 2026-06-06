@@ -46,8 +46,9 @@
 
 .timeline-header-title {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 12px;
+    gap: 4px 12px;
     min-width: 0;
 }
 
@@ -64,6 +65,17 @@
     color: var(--tt-text-muted);
     font-weight: 400;
     white-space: nowrap;
+}
+
+.timeline-day-total {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--tt-accent);
+    white-space: nowrap;
+}
+
+.timeline-day-total:empty {
+    display: none;
 }
 
 .timeline-header-controls {
