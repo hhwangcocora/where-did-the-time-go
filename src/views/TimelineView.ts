@@ -24,6 +24,7 @@ export class TimelineView extends ItemView {
     private rulerContainer: HTMLElement;
     private entriesContainer: HTMLElement;
     private visibleDateLabel: HTMLElement;
+    private visibleDateTotal: HTMLElement;
 
     // Dimensions
     private dayHeight: number = 0; // Calculated as 24 * hourHeight
@@ -129,6 +130,9 @@ export class TimelineView extends ItemView {
         if (this.timelineContainer) {
             this.timelineContainer.scrollTop = savedScrollTop;
         }
+
+        // Keep the header's day total in sync after add/edit/delete
+        this.updateVisibleDateLabel();
     }
 
     /**
@@ -197,6 +201,10 @@ export class TimelineView extends ItemView {
         // Visible date range label
         this.visibleDateLabel = titleSection.createSpan('timeline-visible-date');
         this.visibleDateLabel.setText('');
+
+        // Total hours for the day, shown only when a single day fills the viewport
+        this.visibleDateTotal = titleSection.createSpan('timeline-day-total');
+        this.visibleDateTotal.setText('');
 
         const controls = header.createDiv('timeline-header-controls');
 
@@ -345,6 +353,17 @@ export class TimelineView extends ItemView {
         // Format the label
         const label = this.formatVisibleDateRange(topDate, bottomDate);
         this.visibleDateLabel.setText(label);
+
+        // When a single day fills the viewport, surface that day's logged total
+        // inline. Multi-day views span more than one day, so a total is meaningless.
+        if (this.visibleDateTotal) {
+            const sameDay = topDate.toDateString() === bottomDate.toDateString();
+            const entries = sameDay
+                ? this.entriesByDate.get(TableParser.getDateString(topDate)) ?? []
+                : [];
+            const totalMinutes = entries.reduce((sum, entry) => sum + entry.durationMinutes, 0);
+            this.visibleDateTotal.setText(totalMinutes > 0 ? `· ${this.formatDuration(totalMinutes)}` : '');
+        }
     }
 
     /**
