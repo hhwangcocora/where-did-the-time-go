@@ -3,6 +3,7 @@ import { TimeEntry, TimeTrackerSettings } from '../types';
 import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
 import { Logger } from '../utils/Logger';
+import { TimeInput } from '../components/TimeInput';
 
 /**
  * Simple confirmation modal to replace browser confirm()
@@ -89,10 +90,10 @@ export class EntryModal extends Modal {
 
     // Input references for updating
     private endDateInput: TextComponent | null = null;
-    private endTimeInput: TextComponent | null = null;
+    private endTimeInput: TimeInput | null = null;
     private durationInput: TextComponent | null = null;
     private startDateInput: TextComponent | null = null;
-    private startTimeInput: TextComponent | null = null;
+    private startTimeInput: TimeInput | null = null;
 
     // Overlap validation UI
     private saveButton: HTMLButtonElement | null = null;
@@ -200,17 +201,13 @@ export class EntryModal extends Modal {
                     void this.validateOverlap();
                     void this.findAdjacentEntries();
                 });
-            })
-            .addText((text) => {
-                this.startTimeInput = text;
-                text.setValue(this.startTimeValue);
-                text.inputEl.type = 'time';
-                text.onChange((value) => {
-                    this.startTimeValue = value;
-                    this.recalculateDuration();
-                    void this.validateOverlap();
-                    void this.findAdjacentEntries();
-                });
+            });
+        this.startTimeInput = new TimeInput(startSetting.controlEl, this.settings.use24HourFormat,
+            'Start', this.startTimeValue, (value) => {
+                this.startTimeValue = value;
+                this.recalculateDuration();
+                void this.validateOverlap();
+                void this.findAdjacentEntries();
             });
 
         // Magnet button for start (snap to end of previous entry)
@@ -254,17 +251,13 @@ export class EntryModal extends Modal {
                     void this.validateOverlap();
                     void this.findAdjacentEntries();
                 });
-            })
-            .addText((text) => {
-                this.endTimeInput = text;
-                text.setValue(this.endTimeValue);
-                text.inputEl.type = 'time';
-                text.onChange((value) => {
-                    this.endTimeValue = value;
-                    this.recalculateDuration();
-                    void this.validateOverlap();
-                    void this.findAdjacentEntries();
-                });
+            });
+        this.endTimeInput = new TimeInput(endSetting.controlEl, this.settings.use24HourFormat,
+            'End', this.endTimeValue, (value) => {
+                this.endTimeValue = value;
+                this.recalculateDuration();
+                void this.validateOverlap();
+                void this.findAdjacentEntries();
             });
 
         // Magnet button for end (snap to start of next entry)
@@ -428,6 +421,8 @@ export class EntryModal extends Modal {
 
     onClose(): void {
         // Run cleanup handlers
+        this.startTimeInput?.destroy();
+        this.endTimeInput?.destroy();
         for (const handler of this.cleanupHandlers) {
             handler();
         }
@@ -441,6 +436,9 @@ export class EntryModal extends Modal {
      * Handle save button click
      */
     private async handleSave(): Promise<void> {
+        // Validate the visible controls, including incomplete edits.
+        if (this.startTimeInput) this.startTimeValue = this.startTimeInput.getValue();
+        if (this.endTimeInput) this.endTimeValue = this.endTimeInput.getValue();
         // Validate required fields
         if (!this.startDateValue || !this.startTimeValue || !this.endDateValue || !this.endTimeValue) {
             Logger.error('EntryModal: Missing required fields');
@@ -463,7 +461,7 @@ export class EntryModal extends Modal {
         // Validate end time is after start time (prevents negative durations)
         const startDateTime = new Date(`${this.startDateValue}T${this.startTimeValue}`);
         const endDateTime = new Date(`${this.endDateValue}T${this.endTimeValue}`);
-        if (endDateTime <= startDateTime) {
+        if (!Number.isFinite(startDateTime.getTime()) || !Number.isFinite(endDateTime.getTime()) || endDateTime <= startDateTime) {
             new Notice('End time must be after start time');
             return;
         }
@@ -640,19 +638,21 @@ export class EntryModal extends Modal {
     /**
      * Recalculate and update duration display when dates/times change
      */
-    private recalculateDuration(): void {
+    private recalculateDuration(updateDurationInput = true): void {
         const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
         const end = new Date(`${this.endDateValue}T${this.endTimeValue}`);
         const diffMs = end.getTime() - start.getTime();
         const diffMins = Math.round(diffMs / 60000);
 
         // Track invalid duration state
-        this.hasInvalidDuration = diffMins <= 0;
+        this.hasInvalidDuration = !Number.isFinite(diffMins) || diffMins <= 0;
 
-        this.durationValue = this.formatDurationMinutes(diffMins);
+        if (updateDurationInput) {
+            this.durationValue = Number.isFinite(diffMins) ? this.formatDurationMinutes(diffMins) : '';
+        }
         // eslint-disable-next-line @typescript-eslint/no-misused-promises -- false positive: null check, not promise
         if (this.durationInput) {
-            this.durationInput.setValue(this.durationValue);
+            if (updateDurationInput) this.durationInput.setValue(this.durationValue);
             // Add visual error state for invalid duration
             this.durationInput.inputEl.toggleClass('time-input-error', this.hasInvalidDuration);
         }
@@ -669,6 +669,7 @@ export class EntryModal extends Modal {
         if (durationMins <= 0) return;
 
         const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
+        if (!Number.isFinite(start.getTime())) return;
         const end = new Date(start.getTime() + durationMins * 60000);
 
         this.endDateValue = TableParser.getDateString(end);
@@ -680,6 +681,8 @@ export class EntryModal extends Modal {
         if (this.endTimeInput !== null) {
             this.endTimeInput.setValue(this.endTimeValue);
         }
+        this.recalculateDuration(false);
+        void this.findAdjacentEntries();
     }
 
     /**
@@ -966,6 +969,9 @@ export class EntryModal extends Modal {
         const hasEndOverlap = this.endOverlap !== null;
         const hasEncompassed = this.encompassedEntry !== null;
         const hasAnyConflict = hasStartOverlap || hasEndOverlap || hasEncompassed;
+        const durationWarning = !this.startTimeValue || !this.endTimeValue || !this.startDateValue || !this.endDateValue
+            ? 'Enter a valid start and end date/time'
+            : 'End time must be after start time';
 
         // Red border on start inputs if start is inside an entry
         if (this.startDateInput?.inputEl) {
@@ -1021,7 +1027,7 @@ export class EntryModal extends Modal {
                 // Show invalid duration warning
                 if (this.hasInvalidDuration) {
                     const msg = textContainer.createDiv('overlap-message');
-                    msg.setText('End time must be after start time');
+                    msg.setText(durationWarning);
                 }
             } else if (this.hasInvalidDuration) {
                 // Show only duration warning
@@ -1033,7 +1039,7 @@ export class EntryModal extends Modal {
 
                 const textContainer = this.warningBanner.createDiv('overlap-warning-messages');
                 const msg = textContainer.createDiv('overlap-message');
-                msg.setText('End time must be after start time');
+                msg.setText(durationWarning);
             } else {
                 this.warningBanner.addClass('is-hidden');
             }
@@ -1050,7 +1056,9 @@ export class EntryModal extends Modal {
         const hasAnyConflict = this.startOverlap !== null ||
             this.endOverlap !== null ||
             this.encompassedEntry !== null;
-        const cannotSave = hasAnyConflict || this.hasInvalidDuration;
+        const hasInvalidTime = (this.startTimeInput !== null && !this.startTimeInput.getValue()) ||
+            (this.endTimeInput !== null && !this.endTimeInput.getValue());
+        const cannotSave = hasAnyConflict || this.hasInvalidDuration || hasInvalidTime;
 
         if (this.saveButton) {
             this.saveButton.disabled = cannotSave;

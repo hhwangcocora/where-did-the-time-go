@@ -1,5 +1,14 @@
 // Mock for Obsidian API - only what we need for testing
 
+export class Modal {
+    constructor(..._args: unknown[]) {}
+    close(): void {}
+}
+
+export class FuzzySuggestModal extends Modal {}
+
+export class Setting {}
+
 export class Notice {
     constructor(message: string) {
         // Mock notice
