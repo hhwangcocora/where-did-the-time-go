@@ -4,6 +4,7 @@ import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
 import { EntryModal, EntryModalData } from '../modals/EntryModal';
 import { Logger } from '../utils/Logger';
+import { formatTimeRange } from '../utils/TimeFormat';
 
 /**
  * The main timeline view with infinite scrolling
@@ -566,9 +567,10 @@ export class TimelineView extends ItemView {
         }
 
         // Tooltip for hover
+        const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
         const tooltipParts = [
             entry.description || '(No description)',
-            `${entry.start} – ${entry.end} (${this.formatDuration(entry.durationMinutes)})`,
+            `${timeRange} (${this.formatDuration(entry.durationMinutes)})`,
             `Client: ${this.getClientName(entry.client)}`,
         ];
         if (entry.project) tooltipParts.push(`Project: ${this.getProjectName(entry.project)}`);
@@ -581,7 +583,7 @@ export class TimelineView extends ItemView {
 
         // Time text + duration badge
         const timeText = header.createSpan('entry-time-text');
-        timeText.setText(`${entry.start} – ${entry.end}`);
+        timeText.setText(timeRange);
         const durationBadge = header.createSpan('entry-duration-badge');
         durationBadge.setText(this.formatDuration(entry.durationMinutes));
 
@@ -938,7 +940,7 @@ export class TimelineView extends ItemView {
         const startTime = `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')}`;
         const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
 
-        this.entryDragTooltipEl.setText(`${startTime} – ${endTime}`);
+        this.entryDragTooltipEl.setText(formatTimeRange(startTime, endTime, this.settings.use24HourFormat));
         // Position tooltip below the card
         this.entryDragTooltipEl.style.top = `${newTop + newHeight + 8}px`;
     }
@@ -1142,7 +1144,8 @@ export class TimelineView extends ItemView {
      * Show confirmation dialog and delete entry if confirmed
      */
     private confirmDeleteEntry(entry: TimeEntry): void {
-        new ConfirmDeleteModal(this.app, entry, () => {
+        const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
+        new ConfirmDeleteModal(this.app, entry, timeRange, () => {
             void this.dataManager.deleteEntry(entry).then(() => this.refresh());
         }).open();
     }
@@ -1467,7 +1470,7 @@ export class TimelineView extends ItemView {
             const startTime = this.roundToTimeString(startHours);
             const endTime = this.roundToTimeString(endHours);
 
-            this.dragTooltipEl.setText(`${startTime} – ${endTime}`);
+            this.dragTooltipEl.setText(formatTimeRange(startTime, endTime, this.settings.use24HourFormat));
             // Position tooltip near the bottom of selection, offset to the right
             this.dragTooltipEl.style.top = `${maxY + 8}px`;
         }
@@ -1541,7 +1544,7 @@ class ConfirmDeleteModal extends Modal {
     private entry: TimeEntry;
     private onConfirm: () => void;
 
-    constructor(app: App, entry: TimeEntry, onConfirm: () => void) {
+    constructor(app: App, entry: TimeEntry, private readonly timeRange: string, onConfirm: () => void) {
         super(app);
         this.entry = entry;
         this.onConfirm = onConfirm;
@@ -1557,7 +1560,7 @@ class ConfirmDeleteModal extends Modal {
         // Show entry details
         const details = contentEl.createDiv('delete-entry-details');
         details.createEl('p', {
-            text: `${this.entry.start} – ${this.entry.end}`,
+            text: this.timeRange,
             cls: 'delete-entry-time',
         });
         if (this.entry.description) {
