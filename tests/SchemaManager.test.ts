@@ -203,7 +203,7 @@ describe('SchemaManager', () => {
         await schemaManager.saveSchema(newConfig);
 
         const content = files.get('TimeTracking/Schema.md')!;
-        expect(content).toContain('| Topic | enum | No | Math, Physics | No | Badge | 1 |  |');
+        expect(content).toContain('| Topic | enum | No | Math, Physics | No | Content | 1 |  |');
         expect(schemaManager.getSchema().fields[0].id).toBe('topic');
     });
 
@@ -261,6 +261,31 @@ describe('SchemaManager', () => {
             expect(badgeIds).toContain('location');
             expect(badgeIds).not.toContain('tags');
             expect(badgeIds).not.toContain('category');
+        });
+
+        test('getContentFields returns all fields marked with timelineRole: "content"', () => {
+            const contentFields = schemaManager.getContentFields();
+            const contentIds = contentFields.map(f => f.id);
+            expect(contentIds).toContain('tags');
+            expect(contentIds).toContain('notes');
+            expect(contentIds).not.toContain('category');
+            expect(contentIds).not.toContain('location');
+        });
+
+        test('defaults unspecified timeline role to Content', async () => {
+            const markdownWithoutRoles = `# Activity Tracking Schema
+| Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Category | enum | Yes | Work, Rest | No | Color | 1 | |
+| Task | string | Yes | | No | Title | 2 | |
+| Custom Notes | string | No | | No | | | |
+`;
+            files.set('TimeTracking/Schema.md', markdownWithoutRoles);
+            await schemaManager.loadSchema();
+
+            const customField = schemaManager.getField('custom_notes');
+            expect(customField).toBeDefined();
+            expect(customField?.ui?.timelineRole).toBe('content');
         });
     });
 

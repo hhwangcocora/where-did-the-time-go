@@ -51,7 +51,7 @@ describe('TimelineView Dynamic Card Helpers', () => {
                 type: 'string',
                 required: false,
                 multiple: true,
-                ui: { timelineRole: 'hidden' },
+                ui: { timelineRole: 'content' },
             },
             {
                 id: 'notes',
@@ -59,7 +59,7 @@ describe('TimelineView Dynamic Card Helpers', () => {
                 type: 'string',
                 required: false,
                 multiple: false,
-                ui: { timelineRole: 'hidden' },
+                ui: { timelineRole: 'content' },
             },
         ],
         defaultReportGrouping: ['category', 'activity_name', 'location'],
@@ -185,14 +185,14 @@ describe('TimelineView Dynamic Card Helpers', () => {
     });
 
     describe('getEntryNotesAndTags', () => {
-        it('formats notes and tags for inside the note section', () => {
+        it('formats content fields inside the note section as separate lines (FieldName: value(s))', () => {
             const entry = createSampleEntry();
             const noteContent: string = (view as any).getEntryNotesAndTags(entry);
 
-            expect(noteContent).toBe('Detailed notes on changes · #typescript #architecture');
+            expect(noteContent).toBe('Tags: typescript, architecture\nNotes: Detailed notes on changes');
         });
 
-        it('formats tags only when notes is empty', () => {
+        it('formats single content field when other content fields are empty', () => {
             const entry = createSampleEntry({
                 fields: {
                     tags: ['design', 'review'],
@@ -200,7 +200,38 @@ describe('TimelineView Dynamic Card Helpers', () => {
             });
             const noteContent: string = (view as any).getEntryNotesAndTags(entry);
 
-            expect(noteContent).toBe('#design #review');
+            expect(noteContent).toBe('Tags: design, review');
+        });
+
+        it('does not format hidden fields in card content', () => {
+            const schemaWithHidden: TrackingSchemaConfig = {
+                ...mockSchema,
+                fields: [
+                    ...mockSchema.fields,
+                    {
+                        id: 'internal_id',
+                        label: 'Internal ID',
+                        type: 'string',
+                        required: false,
+                        multiple: false,
+                        ui: { timelineRole: 'hidden' },
+                    },
+                ],
+            };
+            (view as any).dataManager = {
+                getSchema: () => schemaWithHidden,
+            };
+
+            const entry = createSampleEntry({
+                fields: {
+                    tags: ['design'],
+                    internal_id: 'secret-123',
+                },
+            });
+            const noteContent: string = (view as any).getEntryNotesAndTags(entry);
+
+            expect(noteContent).toBe('Tags: design');
+            expect(noteContent).not.toContain('secret-123');
         });
     });
 

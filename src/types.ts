@@ -66,8 +66,8 @@ export interface EnumOption {
 export interface FieldUIPresentation {
     widget?: 'text' | 'textarea' | 'dropdown' | 'tags' | 'note-link' | 'multi-select';
     placeholder?: string;
-    /** Role on timeline card: 'title' | 'color' | 'badge' | 'hidden' */
-    timelineRole?: 'title' | 'color' | 'badge' | 'hidden';
+    /** Role on timeline card: 'title' | 'color' | 'badge' | 'content' | 'hidden' */
+    timelineRole?: 'title' | 'color' | 'badge' | 'content' | 'hidden';
 }
 
 /**
@@ -141,13 +141,13 @@ Changes are saved and applied automatically.
 | Category | enum | Yes | Deep Work, Shallow Work, Fitness, Learning, Personal, Leisure, Work | No | Color | 1 | activity |
 | Activity Name | string | Yes | | No | Title | 2 | task, description |
 | Location | enum | No | Home Office, Office, Coffee Shop, Gym, Transit, Movement | No | Badge | 3 | place |
-| Tags | string | No | | Yes | Hidden | | tags |
-| Notes | string | No | | No | Hidden | | linked note |
+| Tags | string | No | | Yes | Content | | tags |
+| Notes | string | No | | No | Content | | linked note |
 
 > [!TIP]
 > - **Type**: \`enum\` or \`string\`.
 > - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
-> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), or \`Hidden\`.
+> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), \`Content\` (card body text), or \`Hidden\`.
 > - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
 > - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
 `;
@@ -231,7 +231,7 @@ export const DEFAULT_SCHEMA_CONFIG: TrackingSchemaConfig = {
             ui: {
                 widget: 'tags',
                 placeholder: 'e.g., coding, research, writing',
-                timelineRole: 'hidden',
+                timelineRole: 'content',
             },
         },
         {
@@ -244,7 +244,7 @@ export const DEFAULT_SCHEMA_CONFIG: TrackingSchemaConfig = {
             ui: {
                 widget: 'note-link',
                 placeholder: '[[Note]] or extra details',
-                timelineRole: 'hidden',
+                timelineRole: 'content',
             },
         },
     ],

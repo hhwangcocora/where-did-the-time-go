@@ -275,16 +275,17 @@ export class SchemaManager {
 
             // Parse timeline role
             const rawRole = roleIndex !== -1 ? (cells[roleIndex] || '').trim().toLowerCase() : '';
-            let timelineRole: 'title' | 'color' | 'badge' | 'hidden';
+            let timelineRole: 'title' | 'color' | 'badge' | 'content' | 'hidden';
             if (rawRole.includes('color')) timelineRole = 'color';
             else if (rawRole.includes('title')) timelineRole = 'title';
             else if (rawRole.includes('badge')) timelineRole = 'badge';
+            else if (rawRole.includes('content')) timelineRole = 'content';
             else if (rawRole.includes('hidden')) timelineRole = 'hidden';
             else {
-                // Sensible default role
+                // Fields default to Content
                 if (type === 'enum' && !fields.some(f => f.ui?.timelineRole === 'color')) timelineRole = 'color';
                 else if (type === 'string' && !fields.some(f => f.ui?.timelineRole === 'title')) timelineRole = 'title';
-                else timelineRole = 'badge';
+                else timelineRole = 'content';
             }
 
             // Parse report dimension
@@ -351,7 +352,7 @@ export class SchemaManager {
             const multiple = f.multiple ? 'Yes' : 'No';
             const role = f.ui?.timelineRole
                 ? f.ui.timelineRole.charAt(0).toUpperCase() + f.ui.timelineRole.slice(1)
-                : 'Badge';
+                : 'Content';
             const dimIndex = config.defaultReportGrouping.indexOf(f.id);
             const reportDim = dimIndex !== -1 ? String(dimIndex + 1) : '';
             const aliases = f.aliases ? f.aliases.join(', ') : '';
@@ -371,7 +372,7 @@ ${rows.join('\n')}
 > [!TIP]
 > - **Type**: \`enum\` or \`string\`.
 > - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
-> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), or \`Hidden\`.
+> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), \`Content\` (card body text), or \`Hidden\`.
 > - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
 > - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
 `;
@@ -456,5 +457,12 @@ ${rows.join('\n')}
      */
     getBadgeFields(): FieldDefinition[] {
         return this.schema.fields.filter(f => f.ui?.timelineRole === 'badge');
+    }
+
+    /**
+     * Get all fields designated as content in card body
+     */
+    getContentFields(): FieldDefinition[] {
+        return this.schema.fields.filter(f => f.ui?.timelineRole === 'content');
     }
 }

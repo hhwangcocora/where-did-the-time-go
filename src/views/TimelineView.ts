@@ -1213,36 +1213,41 @@ export class TimelineView extends ItemView {
     }
 
     /**
-     * Get notes and tags formatted for display inside the note section of the card
+     * Get content lines formatted for display inside the card body text
+     * Formats each field with timelineRole === 'content' as a separate line: "FieldName: value(s)"
      */
     private getEntryNotesAndTags(entry: TimeEntry): string {
         const schema = this.dataManager.getSchema();
-        const parts: string[] = [];
+        const contentFields = schema.fields.filter(f => f.ui?.timelineRole === 'content');
+        const lines: string[] = [];
 
-        // 1. Notes (linked note or text)
-        const notesField = schema.fields.find(f => f.id === 'notes' || f.label.toLowerCase() === 'notes');
-        const notesVal = notesField ? entry.fields?.[notesField.id] : undefined;
-        if (notesVal && typeof notesVal === 'string' && notesVal.trim()) {
-            parts.push(notesVal.trim());
-        } else if (entry.linkedNote?.trim()) {
-            parts.push(entry.linkedNote.trim());
-        }
+        for (const field of contentFields) {
+            let val = entry.fields?.[field.id];
 
-        // 2. Tags inside the note (formatted as #tag1 #tag2)
-        const tagsField = schema.fields.find(f => f.id === 'tags' || f.label.toLowerCase() === 'tags');
-        const tagsVal = tagsField ? entry.fields?.[tagsField.id] : undefined;
-        if (tagsVal) {
-            const tagArr = Array.isArray(tagsVal) ? tagsVal : [tagsVal];
-            const formatted = tagArr
-                .map(t => String(t).trim())
-                .filter(Boolean)
-                .map(t => t.startsWith('#') ? t : `#${t}`);
-            if (formatted.length > 0) {
-                parts.push(formatted.join(' '));
+            // Backward-compatibility fallback for legacy notes or linkedNote
+            if ((val === undefined || val === null || val === '') && (field.id === 'notes' || field.label.toLowerCase() === 'notes')) {
+                if (entry.linkedNote?.trim()) {
+                    val = entry.linkedNote.trim();
+                }
+            }
+
+            if (val === undefined || val === null) continue;
+
+            let displayVal = '';
+            if (Array.isArray(val)) {
+                displayVal = val.map(v => String(v).trim()).filter(Boolean).join(', ');
+            } else if (typeof val === 'string') {
+                displayVal = val.trim();
+            } else {
+                displayVal = String(val).trim();
+            }
+
+            if (displayVal) {
+                lines.push(`${field.label}: ${displayVal}`);
             }
         }
 
-        return parts.join(' · ');
+        return lines.join('\n');
     }
 
     /**

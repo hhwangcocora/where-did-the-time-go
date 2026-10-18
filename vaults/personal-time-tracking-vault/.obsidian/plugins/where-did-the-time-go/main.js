@@ -260,7 +260,7 @@ var DEFAULT_SCHEMA_CONFIG = {
       ui: {
         widget: "tags",
         placeholder: "e.g., coding, research, writing",
-        timelineRole: "hidden"
+        timelineRole: "content"
       }
     },
     {
@@ -273,7 +273,7 @@ var DEFAULT_SCHEMA_CONFIG = {
       ui: {
         widget: "note-link",
         placeholder: "[[Note]] or extra details",
-        timelineRole: "hidden"
+        timelineRole: "content"
       }
     }
   ],
@@ -12009,6 +12009,8 @@ var SchemaManager = class {
         timelineRole = "title";
       else if (rawRole.includes("badge"))
         timelineRole = "badge";
+      else if (rawRole.includes("content"))
+        timelineRole = "content";
       else if (rawRole.includes("hidden"))
         timelineRole = "hidden";
       else {
@@ -12023,7 +12025,7 @@ var SchemaManager = class {
         }))
           timelineRole = "title";
         else
-          timelineRole = "badge";
+          timelineRole = "content";
       }
       if (reportIndex !== -1) {
         const rawDim = (cells[reportIndex] || "").trim();
@@ -12078,7 +12080,7 @@ var SchemaManager = class {
       const required = f.required ? "Yes" : "No";
       const options = f.options ? f.options.map((o) => o.label).join(", ") : "";
       const multiple = f.multiple ? "Yes" : "No";
-      const role = ((_a = f.ui) == null ? void 0 : _a.timelineRole) ? f.ui.timelineRole.charAt(0).toUpperCase() + f.ui.timelineRole.slice(1) : "Badge";
+      const role = ((_a = f.ui) == null ? void 0 : _a.timelineRole) ? f.ui.timelineRole.charAt(0).toUpperCase() + f.ui.timelineRole.slice(1) : "Content";
       const dimIndex = config.defaultReportGrouping.indexOf(f.id);
       const reportDim = dimIndex !== -1 ? String(dimIndex + 1) : "";
       const aliases = f.aliases ? f.aliases.join(", ") : "";
@@ -12096,7 +12098,7 @@ ${rows.join("\n")}
 > [!TIP]
 > - **Type**: \`enum\` or \`string\`.
 > - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
-> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), or \`Hidden\`.
+> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), \`Content\` (card body text), or \`Hidden\`.
 > - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
 > - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
 `;
@@ -12178,6 +12180,15 @@ ${rows.join("\n")}
     return this.schema.fields.filter((f) => {
       var _a;
       return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "badge";
+    });
+  }
+  /**
+   * Get all fields designated as content in card body
+   */
+  getContentFields() {
+    return this.schema.fields.filter((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "content";
     });
   }
 };
@@ -14723,29 +14734,39 @@ var TimelineView = class extends import_obsidian6.ItemView {
     return badges;
   }
   /**
-   * Get notes and tags formatted for display inside the note section of the card
+   * Get content lines formatted for display inside the card body text
+   * Formats each field with timelineRole === 'content' as a separate line: "FieldName: value(s)"
    */
   getEntryNotesAndTags(entry) {
-    var _a, _b, _c;
+    var _a, _b;
     const schema = this.dataManager.getSchema();
-    const parts = [];
-    const notesField = schema.fields.find((f) => f.id === "notes" || f.label.toLowerCase() === "notes");
-    const notesVal = notesField ? (_a = entry.fields) == null ? void 0 : _a[notesField.id] : void 0;
-    if (notesVal && typeof notesVal === "string" && notesVal.trim()) {
-      parts.push(notesVal.trim());
-    } else if ((_b = entry.linkedNote) == null ? void 0 : _b.trim()) {
-      parts.push(entry.linkedNote.trim());
-    }
-    const tagsField = schema.fields.find((f) => f.id === "tags" || f.label.toLowerCase() === "tags");
-    const tagsVal = tagsField ? (_c = entry.fields) == null ? void 0 : _c[tagsField.id] : void 0;
-    if (tagsVal) {
-      const tagArr = Array.isArray(tagsVal) ? tagsVal : [tagsVal];
-      const formatted = tagArr.map((t) => String(t).trim()).filter(Boolean).map((t) => t.startsWith("#") ? t : `#${t}`);
-      if (formatted.length > 0) {
-        parts.push(formatted.join(" "));
+    const contentFields = schema.fields.filter((f) => {
+      var _a2;
+      return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "content";
+    });
+    const lines = [];
+    for (const field of contentFields) {
+      let val = (_a = entry.fields) == null ? void 0 : _a[field.id];
+      if ((val === void 0 || val === null || val === "") && (field.id === "notes" || field.label.toLowerCase() === "notes")) {
+        if ((_b = entry.linkedNote) == null ? void 0 : _b.trim()) {
+          val = entry.linkedNote.trim();
+        }
+      }
+      if (val === void 0 || val === null)
+        continue;
+      let displayVal = "";
+      if (Array.isArray(val)) {
+        displayVal = val.map((v) => String(v).trim()).filter(Boolean).join(", ");
+      } else if (typeof val === "string") {
+        displayVal = val.trim();
+      } else {
+        displayVal = String(val).trim();
+      }
+      if (displayVal) {
+        lines.push(`${field.label}: ${displayVal}`);
       }
     }
-    return parts.join(" \xB7 ");
+    return lines.join("\n");
   }
   /**
    * Build rich hover tooltip with title, time range, and all populated schema attributes
