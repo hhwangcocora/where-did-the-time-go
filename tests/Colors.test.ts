@@ -1,4 +1,4 @@
-import { getColorForValue, COLOR_PALETTE } from '../src/utils/colors';
+import { getColorForValue, COLOR_PALETTE, FIXED_LOCATION_COLOR } from '../src/utils/colors';
 
 describe('colors utility', () => {
     test('returns consistent color for identical strings', () => {
@@ -24,5 +24,9 @@ describe('colors utility', () => {
     test('handles empty or blank string gracefully', () => {
         const color = getColorForValue('');
         expect(color).toBe(COLOR_PALETTE[0]);
+    });
+
+    test('exports FIXED_LOCATION_COLOR as neutral slate', () => {
+        expect(FIXED_LOCATION_COLOR).toBe('#64748b');
     });
 });

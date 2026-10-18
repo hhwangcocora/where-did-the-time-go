@@ -3,13 +3,13 @@
 Edit the table below to customize your activity fields.
 Changes are saved and applied automatically.
 
-| Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Category | enum | Yes | Deep Work, Shallow Work, Fitness, Learning, Personal, Leisure, Work | No | Color | 1 | activity |
-| Activity Name | string | Yes | | No | Title | 2 | task, description |
-| Location | enum | No | Home Office, Office, Coffee Shop, Gym, Transit, Movement | No | Badge | 3 | place |
-| Tags | string | No | | Yes | Hidden | | tags |
-| Notes | string | No | | No | Hidden | | linked note |
+| Field Name    | Type   | Required | Options                                                                                                                                      | Allow Multiple | Timeline Role | Report Dimension | Aliases           |
+| :------------ | :----- | :------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :------------- | :------------ | :--------------- | :---------------- |
+| Category      | enum   | Yes      | Deep Work, Shallow Work, Fitness, Learning, Personal, Leisure, Work, Chores, English Learning, Mindfulness & Therapy, Finance, Entertainment | No             | Color         | 1                | activity          |
+| Activity Name | string | Yes      |                                                                                                                                              | No             | Title         | 2                | task, description |
+| Location      | enum   | No       | Home Office, Office, Coffee Shop, Gym, Transit, Movement_svl, Movement_mtv, Movement_sc, whole_foods, costco, target, cvs, T&T               | No             | Badge         | 3                | place             |
+| Tags          | string | No       |                                                                                                                                              | Yes            | Hidden        |                  | tags              |
+| Notes         | string | No       |                                                                                                                                              | No             | Hidden        |                  | linked note       |
 
 > [!TIP]
 > - **Type**: `enum` or `string`.

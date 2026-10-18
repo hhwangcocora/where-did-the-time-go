@@ -12,6 +12,7 @@
     --tt-card-bg: var(--background-primary-alt);
     --tt-radius: 8px;
     --tt-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    --tt-location-color: #64748b;
 
     display: flex;
     flex-direction: column;
@@ -433,6 +434,11 @@
     border-radius: 0 0 var(--tt-radius) var(--tt-radius);
 }
 
+/* Location segment fixed color (only Category has different colors) */
+.powerline-seg.powerline-seg-location {
+    background: var(--seg-color, var(--tt-location-color, #64748b));
+}
+
 /* ==========================================================================
    15 MINUTE ENTRY (Compact Inline)
    ========================================================================== */
@@ -488,6 +494,11 @@
     clip-path: none;
     border-radius: 3px;
     padding: 2px 8px;
+}
+
+/* Location tiny tag fixed color */
+.tiny-tag.tiny-tag-location {
+    background: var(--tag-color, var(--tt-location-color, #64748b));
 }
 
 /* Inline description (15m only) */

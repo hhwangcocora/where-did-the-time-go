@@ -8,7 +8,7 @@ import {
     FieldType,
     EnumOption,
 } from '../types';
-import { getColorForValue } from '../utils/colors';
+import { getColorForValue, FIXED_LOCATION_COLOR } from '../utils/colors';
 import { Logger } from '../utils/Logger';
 
 /**
@@ -261,10 +261,11 @@ export class SchemaManager {
                 const rawOpts = optionsIndex !== -1 ? (cells[optionsIndex] || '').trim() : '';
                 if (rawOpts) {
                     const parsedOpts = rawOpts.split(',').map(o => o.trim()).filter(o => o.length > 0);
+                    const isLocation = id === 'location' || fieldName.toLowerCase() === 'location';
                     options = parsedOpts.map(optLabel => ({
                         id: optLabel.toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, ''),
                         label: optLabel,
-                        color: getColorForValue(optLabel),
+                        color: isLocation ? FIXED_LOCATION_COLOR : getColorForValue(optLabel),
                     }));
                     if (options.length > 0) {
                         defaultValue = options[0].label;

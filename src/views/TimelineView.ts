@@ -6,7 +6,7 @@ import { EntryModal, EntryModalData } from '../modals/EntryModal';
 import { DiaryModal } from '../modals/DiaryModal';
 import { Logger } from '../utils/Logger';
 import { formatTimeRange } from '../utils/TimeFormat';
-import { getColorForValue } from '../utils/colors';
+import { getColorForValue, FIXED_LOCATION_COLOR } from '../utils/colors';
 
 /**
  * The main timeline view with infinite scrolling
@@ -652,6 +652,9 @@ export class TimelineView extends ItemView {
 
             if (badges.length > 0) {
                 const tag = tinyTags.createSpan('tiny-tag');
+                if (badges[0].isLocation) {
+                    tag.addClass('tiny-tag-location');
+                }
                 tag.setText(badges[0].text.substring(0, 3).toUpperCase());
                 tag.style.setProperty('--tag-color', badges[0].color);
             }
@@ -730,10 +733,13 @@ export class TimelineView extends ItemView {
                 catSeg.style.setProperty('--seg-color', cardColor);
             }
 
-            // 2. Location segment (colored card)
+            // 2. Location segment (fixed color badge)
             const badges = this.getEntryBadges(entry);
             for (const badge of badges) {
                 const seg = footer.createSpan('powerline-seg');
+                if (badge.isLocation) {
+                    seg.addClass('powerline-seg-location');
+                }
                 seg.setText(badge.text);
                 seg.style.setProperty('--seg-color', badge.color);
             }
@@ -1149,7 +1155,7 @@ export class TimelineView extends ItemView {
      * Get badges for an entry card based on schema fields with timelineRole === 'badge'
      * Excludes tags, which are displayed inside the note section
      */
-    private getEntryBadges(entry: TimeEntry): Array<{ label: string; text: string; color: string }> {
+    private getEntryBadges(entry: TimeEntry): Array<{ label: string; text: string; color: string; isLocation?: boolean }> {
         const schema = this.dataManager.getSchema();
         // Tags should not be rendered as colored card badges; only location / other badge fields
         const badgeFields = schema.fields.filter(f =>
@@ -1157,9 +1163,10 @@ export class TimelineView extends ItemView {
             f.id !== 'tags' &&
             f.label.toLowerCase() !== 'tags'
         );
-        const badges: Array<{ label: string; text: string; color: string }> = [];
+        const badges: Array<{ label: string; text: string; color: string; isLocation?: boolean }> = [];
 
         for (const field of badgeFields) {
+            const isLocation = field.id === 'location' || field.label.toLowerCase() === 'location';
             const val = entry.fields?.[field.id];
             if (!val) continue;
 
@@ -1168,23 +1175,26 @@ export class TimelineView extends ItemView {
                 const itemStr = String(item).trim();
                 if (!itemStr) continue;
 
-                // Color from option if enum, else deterministic hash
-                let color = '';
-                if (field.options) {
-                    const opt = field.options.find(o =>
-                        o.id.toLowerCase() === itemStr.toLowerCase() ||
-                        o.label.toLowerCase() === itemStr.toLowerCase()
-                    );
-                    if (opt?.color) color = opt.color;
-                }
-                if (!color) {
-                    color = getColorForValue(itemStr);
+                // Location should be in one fixed color; only category has different colors
+                let color = FIXED_LOCATION_COLOR;
+                if (!isLocation) {
+                    if (field.options) {
+                        const opt = field.options.find(o =>
+                            o.id.toLowerCase() === itemStr.toLowerCase() ||
+                            o.label.toLowerCase() === itemStr.toLowerCase()
+                        );
+                        if (opt?.color) color = opt.color;
+                    }
+                    if (!color) {
+                        color = getColorForValue(itemStr);
+                    }
                 }
 
                 badges.push({
                     label: field.label,
                     text: itemStr,
                     color,
+                    isLocation,
                 });
             }
         }
@@ -1192,7 +1202,7 @@ export class TimelineView extends ItemView {
         // Fallback for legacy entries with project/activity if no dynamic badges
         if (badges.length === 0) {
             if (entry.project) {
-                badges.push({ label: 'Project', text: entry.project, color: getColorForValue(entry.project) });
+                badges.push({ label: 'Project', text: entry.project, color: FIXED_LOCATION_COLOR, isLocation: true });
             }
             if (entry.activity) {
                 badges.push({ label: 'Activity', text: entry.activity, color: getColorForValue(entry.activity) });

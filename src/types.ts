@@ -1,4 +1,4 @@
-import { getColorForValue } from './utils/colors';
+import { getColorForValue, FIXED_LOCATION_COLOR } from './utils/colors';
 
 /**
  * Core types for Where Did The Time Go plugin
@@ -214,7 +214,7 @@ export const DEFAULT_SCHEMA_CONFIG: TrackingSchemaConfig = {
             ].map(label => ({
                 id: label.toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, ''),
                 label,
-                color: getColorForValue(label),
+                color: FIXED_LOCATION_COLOR,
             })),
             ui: {
                 widget: 'dropdown',

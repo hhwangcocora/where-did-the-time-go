@@ -17,8 +17,14 @@ export const COLOR_PALETTE: readonly string[] = [
     '#a855f7', // Purple
     '#06b6d4', // Cerulean
     '#e11d48', // Rose
-    '#64748b', // Slate
+    '#2563eb', // Royal Blue
 ];
+
+/**
+ * Fixed neutral slate color for location badges across the timeline.
+ * Only categories have distinct dynamic colors; location remains in this one fixed color.
+ */
+export const FIXED_LOCATION_COLOR = '#64748b';
 
 /**
  * Deterministically maps any string value to a consistent hex color code from COLOR_PALETTE.

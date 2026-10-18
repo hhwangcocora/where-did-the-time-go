@@ -1,6 +1,6 @@
 import { SchemaManager } from '../src/data/SchemaManager';
 import { DEFAULT_SETTINGS, DEFAULT_SCHEMA_CONFIG, TrackingSchemaConfig } from '../src/types';
-import { getColorForValue } from '../src/utils/colors';
+import { getColorForValue, FIXED_LOCATION_COLOR } from '../src/utils/colors';
 import { Vault, TFile, TFolder } from 'obsidian';
 
 describe('SchemaManager', () => {
@@ -133,6 +133,25 @@ describe('SchemaManager', () => {
         expect(schema.fields[1].aliases).toContain('Description');
 
         expect(schema.defaultReportGrouping).toEqual(['domain', 'task']);
+    });
+
+    test('assigns FIXED_LOCATION_COLOR to all Location enum options when parsed from Schema.md', async () => {
+        const customMarkdown = `# Schema
+| Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Category | enum | Yes | Deep Work, Fitness | No | Color | 1 | |
+| Location | enum | No | Home Office, Coffee Shop, Gym | No | Badge | 2 | |
+`;
+        files.set('TimeTracking/Schema.md', customMarkdown);
+
+        const schema = await schemaManager.loadSchema();
+        const locField = schema.fields.find(f => f.id === 'location');
+
+        expect(locField).toBeDefined();
+        expect(locField?.options?.length).toBe(3);
+        expect(locField?.options?.[0].color).toBe(FIXED_LOCATION_COLOR);
+        expect(locField?.options?.[1].color).toBe(FIXED_LOCATION_COLOR);
+        expect(locField?.options?.[2].color).toBe(FIXED_LOCATION_COLOR);
     });
 
     test('recovers safely from invalid or empty table in Schema.md on initial load', async () => {

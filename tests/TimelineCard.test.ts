@@ -5,7 +5,7 @@ import { setupDomPrototypes } from './__mocks__/obsidian';
 import { TimelineView } from '../src/views/TimelineView';
 import { DataManager } from '../src/data/DataManager';
 import { DEFAULT_SETTINGS, TimeEntry, TrackingSchemaConfig } from '../src/types';
-import { getColorForValue } from '../src/utils/colors';
+import { getColorForValue, FIXED_LOCATION_COLOR } from '../src/utils/colors';
 
 describe('TimelineView Dynamic Card Helpers', () => {
     let view: TimelineView;
@@ -41,7 +41,7 @@ describe('TimelineView Dynamic Card Helpers', () => {
                 required: false,
                 multiple: false,
                 options: [
-                    { id: 'Home Office', label: 'Home Office', color: '#0284c7' },
+                    { id: 'Home Office', label: 'Home Office', color: FIXED_LOCATION_COLOR },
                 ],
                 ui: { timelineRole: 'badge' },
             },
@@ -146,7 +146,7 @@ describe('TimelineView Dynamic Card Helpers', () => {
     });
 
     describe('getEntryBadges', () => {
-        it('extracts location badge and excludes tags from colored card badges', () => {
+        it('extracts location badge in fixed color and excludes tags from colored card badges', () => {
             const entry = createSampleEntry();
             const badges = (view as any).getEntryBadges(entry);
 
@@ -154,8 +154,20 @@ describe('TimelineView Dynamic Card Helpers', () => {
             expect(badges[0]).toEqual({
                 label: 'Location',
                 text: 'Home Office',
-                color: '#0284c7',
+                color: FIXED_LOCATION_COLOR,
+                isLocation: true,
             });
+        });
+
+        it('ensures all locations use the same fixed color while categories have different colors', () => {
+            const entry1 = createSampleEntry({ fields: { category: 'Deep Work', location: 'Coffee Shop' } });
+            const entry2 = createSampleEntry({ fields: { category: 'Fitness', location: 'Gym' } });
+            const badges1 = (view as any).getEntryBadges(entry1);
+            const badges2 = (view as any).getEntryBadges(entry2);
+
+            expect(badges1[0].color).toBe(FIXED_LOCATION_COLOR);
+            expect(badges2[0].color).toBe(FIXED_LOCATION_COLOR);
+            expect(badges1[0].color).toBe(badges2[0].color);
         });
 
         it('returns empty array when badge fields are empty', () => {

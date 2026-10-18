@@ -165,9 +165,10 @@ var COLOR_PALETTE = [
   // Cerulean
   "#e11d48",
   // Rose
-  "#64748b"
-  // Slate
+  "#2563eb"
+  // Royal Blue
 ];
+var FIXED_LOCATION_COLOR = "#64748b";
 function getColorForValue(val) {
   const normalized = (val || "").trim().toLowerCase();
   if (!normalized) {
@@ -242,7 +243,7 @@ var DEFAULT_SCHEMA_CONFIG = {
       ].map((label) => ({
         id: label.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, ""),
         label,
-        color: getColorForValue(label)
+        color: FIXED_LOCATION_COLOR
       })),
       ui: {
         widget: "dropdown",
@@ -11989,10 +11990,11 @@ var SchemaManager = class {
         const rawOpts = optionsIndex !== -1 ? (cells[optionsIndex] || "").trim() : "";
         if (rawOpts) {
           const parsedOpts = rawOpts.split(",").map((o) => o.trim()).filter((o) => o.length > 0);
+          const isLocation = id === "location" || fieldName.toLowerCase() === "location";
           options = parsedOpts.map((optLabel) => ({
             id: optLabel.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, ""),
             label: optLabel,
-            color: getColorForValue(optLabel)
+            color: isLocation ? FIXED_LOCATION_COLOR : getColorForValue(optLabel)
           }));
           if (options.length > 0) {
             defaultValue = options[0].label;
@@ -14134,6 +14136,9 @@ var TimelineView = class extends import_obsidian6.ItemView {
       const badges = this.getEntryBadges(entry);
       if (badges.length > 0) {
         const tag = tinyTags.createSpan("tiny-tag");
+        if (badges[0].isLocation) {
+          tag.addClass("tiny-tag-location");
+        }
         tag.setText(badges[0].text.substring(0, 3).toUpperCase());
         tag.style.setProperty("--tag-color", badges[0].color);
       }
@@ -14196,6 +14201,9 @@ var TimelineView = class extends import_obsidian6.ItemView {
       const badges = this.getEntryBadges(entry);
       for (const badge of badges) {
         const seg = footer.createSpan("powerline-seg");
+        if (badge.isLocation) {
+          seg.addClass("powerline-seg-location");
+        }
         seg.setText(badge.text);
         seg.style.setProperty("--seg-color", badge.color);
       }
@@ -14518,6 +14526,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
     );
     const badges = [];
     for (const field of badgeFields) {
+      const isLocation = field.id === "location" || field.label.toLowerCase() === "location";
       const val = (_a = entry.fields) == null ? void 0 : _a[field.id];
       if (!val)
         continue;
@@ -14526,27 +14535,30 @@ var TimelineView = class extends import_obsidian6.ItemView {
         const itemStr = String(item).trim();
         if (!itemStr)
           continue;
-        let color2 = "";
-        if (field.options) {
-          const opt = field.options.find(
-            (o) => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
-          );
-          if (opt == null ? void 0 : opt.color)
-            color2 = opt.color;
-        }
-        if (!color2) {
-          color2 = getColorForValue(itemStr);
+        let color2 = FIXED_LOCATION_COLOR;
+        if (!isLocation) {
+          if (field.options) {
+            const opt = field.options.find(
+              (o) => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
+            );
+            if (opt == null ? void 0 : opt.color)
+              color2 = opt.color;
+          }
+          if (!color2) {
+            color2 = getColorForValue(itemStr);
+          }
         }
         badges.push({
           label: field.label,
           text: itemStr,
-          color: color2
+          color: color2,
+          isLocation
         });
       }
     }
     if (badges.length === 0) {
       if (entry.project) {
-        badges.push({ label: "Project", text: entry.project, color: getColorForValue(entry.project) });
+        badges.push({ label: "Project", text: entry.project, color: FIXED_LOCATION_COLOR, isLocation: true });
       }
       if (entry.activity) {
         badges.push({ label: "Activity", text: entry.activity, color: getColorForValue(entry.activity) });
