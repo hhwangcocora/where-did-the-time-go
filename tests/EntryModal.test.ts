@@ -41,6 +41,18 @@ describe('EntryModal Dynamic Schema', () => {
                 required: false,
                 multiple: true,
             },
+            {
+                id: 'with_who',
+                label: 'With Who',
+                type: 'enum',
+                required: false,
+                multiple: true,
+                options: [
+                    { id: 'alice', label: 'Alice' },
+                    { id: 'bob', label: 'Bob' },
+                    { id: 'charlie', label: 'Charlie' },
+                ],
+            },
         ],
         defaultReportGrouping: ['category', 'activity_name'],
     };
@@ -134,11 +146,11 @@ describe('EntryModal Dynamic Schema', () => {
                 start: '2025-12-01 09:00',
                 end: '2025-12-01 10:00',
                 description: 'System Architecture Design',
-                fields: {
+                fields: expect.objectContaining({
                     category: 'Deep Work',
                     activity_name: 'System Architecture Design',
                     tags: ['architecture', 'planning'],
-                },
+                }),
             })
         );
         expect(onSave).toHaveBeenCalled();
@@ -186,5 +198,106 @@ describe('EntryModal Dynamic Schema', () => {
             })
         );
         expect(onSave).toHaveBeenCalled();
+    });
+
+    describe('interactive multi-select enum chips', () => {
+        it('renders clickable chips for all predefined options and supports toggle selection', () => {
+            const modal = new EntryModal(
+                {} as App,
+                DEFAULT_SETTINGS,
+                dataManager,
+                { mode: 'create', date: new Date(2025, 11, 1), startTime: '09:00', endTime: '10:00' },
+                () => {}
+            );
+
+            modal.onOpen();
+
+            const chips = Array.from(modal.contentEl.querySelectorAll('.multi-select-chip')) as HTMLElement[];
+            expect(chips.length).toBe(3); // Alice, Bob, Charlie
+
+            const aliceChip = chips.find(c => c.textContent?.includes('Alice'))!;
+            const bobChip = chips.find(c => c.textContent?.includes('Bob'))!;
+
+            expect(aliceChip.classList.contains('is-selected')).toBe(false);
+            expect(bobChip.classList.contains('is-selected')).toBe(false);
+
+            // Click Alice to select
+            aliceChip.click();
+            expect(aliceChip.classList.contains('is-selected')).toBe(true);
+            expect(modal['fieldValues']['with_who']).toEqual(['Alice']);
+
+            // Click Bob to select
+            bobChip.click();
+            expect(bobChip.classList.contains('is-selected')).toBe(true);
+            expect(modal['fieldValues']['with_who']).toEqual(['Alice', 'Bob']);
+
+            // Click Alice again to deselect
+            aliceChip.click();
+            expect(aliceChip.classList.contains('is-selected')).toBe(false);
+            expect(modal['fieldValues']['with_who']).toEqual(['Bob']);
+        });
+
+        it('pre-selects chips and renders custom chips in edit mode', () => {
+            const existingEntry: TimeEntry = {
+                date: '2025-12-01',
+                start: '09:00',
+                end: '10:00',
+                description: 'Collab meeting',
+                client: '',
+                startDateTime: new Date(2025, 11, 1, 9, 0),
+                endDateTime: new Date(2025, 11, 1, 10, 0),
+                durationMinutes: 60,
+                lineNumber: 1,
+                fields: {
+                    category: 'Deep Work',
+                    activity_name: 'Collab meeting',
+                    with_who: ['Alice', 'David'], // David is custom (not in options)
+                },
+            };
+
+            const modal = new EntryModal(
+                {} as App,
+                DEFAULT_SETTINGS,
+                dataManager,
+                { mode: 'edit', entry: existingEntry },
+                () => {}
+            );
+
+            modal.onOpen();
+
+            const chips = Array.from(modal.contentEl.querySelectorAll('.multi-select-chip')) as HTMLElement[];
+            const aliceChip = chips.find(c => c.textContent?.includes('Alice'))!;
+            const davidChip = chips.find(c => c.textContent?.includes('David'))!;
+
+            expect(aliceChip.classList.contains('is-selected')).toBe(true);
+            expect(davidChip).toBeDefined();
+            expect(davidChip.classList.contains('is-selected')).toBe(true);
+            expect(davidChip.classList.contains('is-custom')).toBe(true);
+        });
+
+        it('allows adding custom person via custom input', () => {
+            const modal = new EntryModal(
+                {} as App,
+                DEFAULT_SETTINGS,
+                dataManager,
+                { mode: 'create', date: new Date(2025, 11, 1), startTime: '09:00', endTime: '10:00' },
+                () => {}
+            );
+
+            modal.onOpen();
+
+            const input = modal.contentEl.querySelector('.multi-select-custom-input') as HTMLInputElement;
+            expect(input).toBeDefined();
+
+            input.value = 'Eve';
+            const enterEvent = new (global as any).window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+            input.dispatchEvent(enterEvent);
+
+            expect(modal['fieldValues']['with_who']).toContain('Eve');
+            const chips = Array.from(modal.contentEl.querySelectorAll('.multi-select-chip')) as HTMLElement[];
+            const eveChip = chips.find(c => c.textContent?.includes('Eve'))!;
+            expect(eveChip).toBeDefined();
+            expect(eveChip.classList.contains('is-selected')).toBe(true);
+        });
     });
 });

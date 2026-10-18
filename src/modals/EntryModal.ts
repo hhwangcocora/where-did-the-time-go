@@ -394,14 +394,17 @@ export class EntryModal extends Modal {
         const labelText = field.required ? `${field.label} *` : field.label;
         setting.setName(labelText);
 
-        if (field.type === 'enum') {
-            if (field.multiple) {
-                // Multi-select enum or comma-separated tags
+        if (field.type === 'enum' || field.options) {
+            if (field.multiple && field.options && field.options.length > 0) {
+                // Interactive multi-select chips/pills
+                this.renderMultiSelectEnum(setting, field);
+            } else if (field.multiple) {
+                // Multi-select enum without defined options or comma-separated tags
                 const currentVal = this.fieldValues[field.id];
                 const strVal = Array.isArray(currentVal) ? currentVal.join(', ') : (currentVal || '');
                 setting.addText((text) => {
                     text.setValue(strVal);
-                    text.setPlaceholder(field.ui?.placeholder || field.options?.map(o => o.label).join(', ') || 'Comma-separated');
+                    text.setPlaceholder(field.ui?.placeholder || 'Comma-separated');
                     text.onChange((val) => {
                         this.fieldValues[field.id] = val
                             ? val.split(',').map(s => s.trim()).filter(Boolean)
@@ -527,6 +530,180 @@ export class EntryModal extends Modal {
                 });
             }
         }
+    }
+
+    /**
+     * Render an interactive multi-select chip toggle group for enum fields with multiple: true
+     */
+    private renderMultiSelectEnum(setting: Setting, field: FieldDefinition): void {
+        setting.settingEl.addClass('has-multi-select');
+
+        // Normalize current value to string array
+        const rawVal = this.fieldValues[field.id];
+        let selectedList: string[] = [];
+        if (Array.isArray(rawVal)) {
+            selectedList = rawVal.map(s => String(s).trim()).filter(Boolean);
+        } else if (typeof rawVal === 'string' && rawVal.trim()) {
+            selectedList = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+        }
+
+        // Maintain selection state
+        const selectedSet = new Set<string>(selectedList);
+        this.fieldValues[field.id] = Array.from(selectedSet);
+
+        const container = setting.controlEl.createDiv('multi-select-enum-container');
+        const chipsContainer = container.createDiv('multi-select-chips');
+
+        const updateSelection = () => {
+            this.fieldValues[field.id] = Array.from(selectedSet);
+        };
+
+        const definedOptions = field.options || [];
+
+        // 1. Render predefined options
+        for (const opt of definedOptions) {
+            let matchedValue: string | undefined;
+            for (const item of selectedSet) {
+                if (item.toLowerCase() === opt.label.toLowerCase() || item.toLowerCase() === opt.id.toLowerCase()) {
+                    matchedValue = item;
+                    break;
+                }
+            }
+            const isSelected = matchedValue !== undefined;
+
+            const chip = chipsContainer.createSpan({
+                cls: `multi-select-chip ${isSelected ? 'is-selected' : ''}`,
+            });
+            chip.setAttribute('role', 'button');
+            chip.setAttribute('tabindex', '0');
+            chip.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+
+            if (isSelected) {
+                const checkIcon = chip.createSpan('chip-check-icon');
+                checkIcon.setText('✓ ');
+            }
+            chip.createSpan({ text: opt.label });
+
+            chip.addEventListener('click', () => {
+                const currentlySelected = chip.classList.contains('is-selected');
+                if (currentlySelected) {
+                    if (matchedValue) selectedSet.delete(matchedValue);
+                    selectedSet.delete(opt.label);
+                    selectedSet.delete(opt.id);
+                    chip.removeClass('is-selected');
+                    chip.setAttribute('aria-pressed', 'false');
+                    const icon = chip.querySelector('.chip-check-icon');
+                    if (icon) icon.remove();
+                } else {
+                    selectedSet.add(opt.label);
+                    matchedValue = opt.label;
+                    chip.addClass('is-selected');
+                    chip.setAttribute('aria-pressed', 'true');
+                    if (!chip.querySelector('.chip-check-icon')) {
+                        const icon = chip.createSpan({ cls: 'chip-check-icon', text: '✓ ' });
+                        chip.insertBefore(icon, chip.firstChild);
+                    }
+                }
+                updateSelection();
+            });
+
+            chip.addEventListener('keydown', (e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    chip.click();
+                }
+            });
+        }
+
+        // Helper to append a custom chip
+        const addCustomChip = (val: string) => {
+            const customChip = chipsContainer.createSpan({
+                cls: 'multi-select-chip is-selected is-custom',
+            });
+            const checkIcon = customChip.createSpan('chip-check-icon');
+            checkIcon.setText('✓ ');
+            customChip.createSpan({ text: val });
+            const removeBtn = customChip.createSpan({
+                cls: 'chip-remove-icon',
+                text: ' ×',
+            });
+            removeBtn.setAttribute('title', `Remove ${val}`);
+            removeBtn.addEventListener('click', (e: MouseEvent) => {
+                e.stopPropagation();
+                selectedSet.delete(val);
+                updateSelection();
+                customChip.remove();
+            });
+        };
+
+        // 2. Render custom values not in predefined options
+        for (const val of selectedSet) {
+            const isDefined = definedOptions.some(o =>
+                o.label.toLowerCase() === val.toLowerCase() ||
+                o.id.toLowerCase() === val.toLowerCase()
+            );
+            if (!isDefined) {
+                addCustomChip(val);
+            }
+        }
+
+        // 3. Optional inline custom input for ad-hoc additions
+        const addContainer = container.createDiv('multi-select-add-custom');
+        const customInput = addContainer.createEl('input', {
+            type: 'text',
+            cls: 'multi-select-custom-input',
+            placeholder: '+ Add other...',
+        });
+
+        const handleAddCustom = () => {
+            const val = customInput.value.trim();
+            if (!val) return;
+
+            // Check if matches an existing predefined option
+            const matchingOpt = field.options?.find(o =>
+                o.label.toLowerCase() === val.toLowerCase() ||
+                o.id.toLowerCase() === val.toLowerCase()
+            );
+
+            if (matchingOpt) {
+                if (!selectedSet.has(matchingOpt.label) && !selectedSet.has(matchingOpt.id)) {
+                    selectedSet.add(matchingOpt.label);
+                    updateSelection();
+                    const chipEl = Array.from(chipsContainer.querySelectorAll('.multi-select-chip')).find(
+                        c => c.textContent?.includes(matchingOpt.label)
+                    ) as HTMLElement;
+                    if (chipEl && !chipEl.classList.contains('is-selected')) {
+                        chipEl.addClass('is-selected');
+                        chipEl.setAttribute('aria-pressed', 'true');
+                        if (!chipEl.querySelector('.chip-check-icon')) {
+                            const icon = chipEl.createSpan({ cls: 'chip-check-icon', text: '✓ ' });
+                            chipEl.insertBefore(icon, chipEl.firstChild);
+                        }
+                    }
+                }
+            } else {
+                if (!selectedSet.has(val)) {
+                    selectedSet.add(val);
+                    updateSelection();
+                    addCustomChip(val);
+                }
+            }
+
+            customInput.value = '';
+        };
+
+        customInput.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddCustom();
+            }
+        });
+
+        customInput.addEventListener('blur', () => {
+            if (customInput.value.trim()) {
+                handleAddCustom();
+            }
+        });
     }
 
     /**

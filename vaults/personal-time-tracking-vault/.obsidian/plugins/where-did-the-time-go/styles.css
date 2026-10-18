@@ -886,6 +886,113 @@
     resize: vertical;
 }
 
+/* Multi-Select Enum Chips */
+.time-tracker-entry-modal .setting-item.has-multi-select {
+    align-items: flex-start;
+}
+
+.multi-select-enum-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.multi-select-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.multi-select-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+    user-select: none;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    transition: all 0.15s ease-in-out;
+}
+
+.multi-select-chip:hover {
+    border-color: var(--interactive-accent);
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+}
+
+.multi-select-chip:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 1px;
+}
+
+/* Selected chip state */
+.multi-select-chip.is-selected {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent, #ffffff);
+    border-color: var(--interactive-accent);
+    font-weight: 600;
+}
+
+.multi-select-chip.is-selected:hover {
+    filter: brightness(1.1);
+}
+
+.multi-select-chip .chip-check-icon {
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.multi-select-chip .chip-remove-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: bold;
+    margin-left: 2px;
+    opacity: 0.8;
+    cursor: pointer;
+}
+
+.multi-select-chip .chip-remove-icon:hover {
+    opacity: 1;
+}
+
+/* Custom ad-hoc chip input */
+.multi-select-add-custom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.multi-select-custom-input {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: var(--input-radius, 4px);
+    width: 120px;
+    height: 24px;
+    border: 1px dashed var(--background-modifier-border);
+    background: transparent;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+}
+
+.multi-select-custom-input:focus {
+    width: 160px;
+    border-style: solid;
+    border-color: var(--interactive-accent);
+    color: var(--text-normal);
+    background: var(--background-primary);
+}
+
 /* Info icon with tooltip */
 .info-icon {
     display: inline-flex;

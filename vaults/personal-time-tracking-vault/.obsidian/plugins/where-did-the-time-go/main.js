@@ -12035,7 +12035,9 @@ var SchemaManager = class {
       const rawAliases = aliasesIndex !== -1 ? (cells[aliasesIndex] || "").trim() : "";
       const aliases = rawAliases ? rawAliases.split(",").map((a) => a.trim()).filter((a) => a.length > 0) : [];
       let widget = "text";
-      if (type === "enum")
+      if (type === "enum" && multiple)
+        widget = "multi-select";
+      else if (type === "enum")
         widget = "dropdown";
       else if (multiple)
         widget = "tags";
@@ -12827,14 +12829,16 @@ var EntryModal = class extends import_obsidian4.Modal {
     const setting = new import_obsidian4.Setting(container);
     const labelText = field.required ? `${field.label} *` : field.label;
     setting.setName(labelText);
-    if (field.type === "enum") {
-      if (field.multiple) {
+    if (field.type === "enum" || field.options) {
+      if (field.multiple && field.options && field.options.length > 0) {
+        this.renderMultiSelectEnum(setting, field);
+      } else if (field.multiple) {
         const currentVal = this.fieldValues[field.id];
         const strVal = Array.isArray(currentVal) ? currentVal.join(", ") : currentVal || "";
         setting.addText((text5) => {
-          var _a2, _b2;
+          var _a2;
           text5.setValue(strVal);
-          text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || ((_b2 = field.options) == null ? void 0 : _b2.map((o) => o.label).join(", ")) || "Comma-separated");
+          text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || "Comma-separated");
           text5.onChange((val) => {
             this.fieldValues[field.id] = val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
           });
@@ -12943,6 +12947,158 @@ var EntryModal = class extends import_obsidian4.Modal {
         });
       }
     }
+  }
+  /**
+   * Render an interactive multi-select chip toggle group for enum fields with multiple: true
+   */
+  renderMultiSelectEnum(setting, field) {
+    setting.settingEl.addClass("has-multi-select");
+    const rawVal = this.fieldValues[field.id];
+    let selectedList = [];
+    if (Array.isArray(rawVal)) {
+      selectedList = rawVal.map((s) => String(s).trim()).filter(Boolean);
+    } else if (typeof rawVal === "string" && rawVal.trim()) {
+      selectedList = rawVal.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    const selectedSet = new Set(selectedList);
+    this.fieldValues[field.id] = Array.from(selectedSet);
+    const container = setting.controlEl.createDiv("multi-select-enum-container");
+    const chipsContainer = container.createDiv("multi-select-chips");
+    const updateSelection = () => {
+      this.fieldValues[field.id] = Array.from(selectedSet);
+    };
+    const definedOptions = field.options || [];
+    for (const opt of definedOptions) {
+      let matchedValue;
+      for (const item of selectedSet) {
+        if (item.toLowerCase() === opt.label.toLowerCase() || item.toLowerCase() === opt.id.toLowerCase()) {
+          matchedValue = item;
+          break;
+        }
+      }
+      const isSelected = matchedValue !== void 0;
+      const chip = chipsContainer.createSpan({
+        cls: `multi-select-chip ${isSelected ? "is-selected" : ""}`
+      });
+      chip.setAttribute("role", "button");
+      chip.setAttribute("tabindex", "0");
+      chip.setAttribute("aria-pressed", isSelected ? "true" : "false");
+      if (isSelected) {
+        const checkIcon = chip.createSpan("chip-check-icon");
+        checkIcon.setText("\u2713 ");
+      }
+      chip.createSpan({ text: opt.label });
+      chip.addEventListener("click", () => {
+        const currentlySelected = chip.classList.contains("is-selected");
+        if (currentlySelected) {
+          if (matchedValue)
+            selectedSet.delete(matchedValue);
+          selectedSet.delete(opt.label);
+          selectedSet.delete(opt.id);
+          chip.removeClass("is-selected");
+          chip.setAttribute("aria-pressed", "false");
+          const icon = chip.querySelector(".chip-check-icon");
+          if (icon)
+            icon.remove();
+        } else {
+          selectedSet.add(opt.label);
+          matchedValue = opt.label;
+          chip.addClass("is-selected");
+          chip.setAttribute("aria-pressed", "true");
+          if (!chip.querySelector(".chip-check-icon")) {
+            const icon = chip.createSpan({ cls: "chip-check-icon", text: "\u2713 " });
+            chip.insertBefore(icon, chip.firstChild);
+          }
+        }
+        updateSelection();
+      });
+      chip.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          chip.click();
+        }
+      });
+    }
+    const addCustomChip = (val) => {
+      const customChip = chipsContainer.createSpan({
+        cls: "multi-select-chip is-selected is-custom"
+      });
+      const checkIcon = customChip.createSpan("chip-check-icon");
+      checkIcon.setText("\u2713 ");
+      customChip.createSpan({ text: val });
+      const removeBtn = customChip.createSpan({
+        cls: "chip-remove-icon",
+        text: " \xD7"
+      });
+      removeBtn.setAttribute("title", `Remove ${val}`);
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectedSet.delete(val);
+        updateSelection();
+        customChip.remove();
+      });
+    };
+    for (const val of selectedSet) {
+      const isDefined = definedOptions.some(
+        (o) => o.label.toLowerCase() === val.toLowerCase() || o.id.toLowerCase() === val.toLowerCase()
+      );
+      if (!isDefined) {
+        addCustomChip(val);
+      }
+    }
+    const addContainer = container.createDiv("multi-select-add-custom");
+    const customInput = addContainer.createEl("input", {
+      type: "text",
+      cls: "multi-select-custom-input",
+      placeholder: "+ Add other..."
+    });
+    const handleAddCustom = () => {
+      var _a;
+      const val = customInput.value.trim();
+      if (!val)
+        return;
+      const matchingOpt = (_a = field.options) == null ? void 0 : _a.find(
+        (o) => o.label.toLowerCase() === val.toLowerCase() || o.id.toLowerCase() === val.toLowerCase()
+      );
+      if (matchingOpt) {
+        if (!selectedSet.has(matchingOpt.label) && !selectedSet.has(matchingOpt.id)) {
+          selectedSet.add(matchingOpt.label);
+          updateSelection();
+          const chipEl = Array.from(chipsContainer.querySelectorAll(".multi-select-chip")).find(
+            (c) => {
+              var _a2;
+              return (_a2 = c.textContent) == null ? void 0 : _a2.includes(matchingOpt.label);
+            }
+          );
+          if (chipEl && !chipEl.classList.contains("is-selected")) {
+            chipEl.addClass("is-selected");
+            chipEl.setAttribute("aria-pressed", "true");
+            if (!chipEl.querySelector(".chip-check-icon")) {
+              const icon = chipEl.createSpan({ cls: "chip-check-icon", text: "\u2713 " });
+              chipEl.insertBefore(icon, chipEl.firstChild);
+            }
+          }
+        }
+      } else {
+        if (!selectedSet.has(val)) {
+          selectedSet.add(val);
+          updateSelection();
+          addCustomChip(val);
+        }
+      }
+      customInput.value = "";
+    };
+    customInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleAddCustom();
+      }
+    });
+    customInput.addEventListener("blur", () => {
+      if (customInput.value.trim()) {
+        handleAddCustom();
+      }
+    });
   }
   /**
    * Handle save button click

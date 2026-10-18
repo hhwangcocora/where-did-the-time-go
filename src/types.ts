@@ -64,7 +64,7 @@ export interface EnumOption {
  * UI presentation hints for a field
  */
 export interface FieldUIPresentation {
-    widget?: 'text' | 'textarea' | 'dropdown' | 'tags' | 'note-link';
+    widget?: 'text' | 'textarea' | 'dropdown' | 'tags' | 'note-link' | 'multi-select';
     placeholder?: string;
     /** Role on timeline card: 'title' | 'color' | 'badge' | 'hidden' */
     timelineRole?: 'title' | 'color' | 'badge' | 'hidden';

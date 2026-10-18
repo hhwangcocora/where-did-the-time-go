@@ -303,8 +303,9 @@ export class SchemaManager {
                 : [];
 
             // Determine widget
-            let widget: 'text' | 'textarea' | 'dropdown' | 'tags' | 'note-link' = 'text';
-            if (type === 'enum') widget = 'dropdown';
+            let widget: 'text' | 'textarea' | 'dropdown' | 'tags' | 'note-link' | 'multi-select' = 'text';
+            if (type === 'enum' && multiple) widget = 'multi-select';
+            else if (type === 'enum') widget = 'dropdown';
             else if (multiple) widget = 'tags';
             else if (id.includes('note')) widget = 'note-link';
 
