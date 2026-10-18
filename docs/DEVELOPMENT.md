@@ -22,11 +22,11 @@ npm run dev
 
 ## Test Vault
 
-A test vault is included in the repo at `vaults/where-did-the-time-go-vault/`. This is where the plugin gets copied on build.
+A test vault is included in the repo at `vaults/personal-time-tracking-vault/`. This is where the plugin gets copied on build.
 
 To open in Obsidian:
 1. Open Obsidian → "Open another vault" → "Open folder as vault"
-2. Select `vaults/where-did-the-time-go-vault`
+2. Select `vaults/personal-time-tracking-vault`
 3. The plugin is pre-installed and ready to use
 
 To use a different vault, either:
@@ -47,27 +47,45 @@ To use a different vault, either:
 
 ```
 src/
-├── main.ts              # Plugin entry point
-├── types.ts             # TypeScript interfaces
+├── main.ts              # Plugin entry point & lifecycle
+├── types.ts             # TypeScript interfaces & default schema
 ├── settings.ts          # Settings tab UI
 ├── data/
-│   ├── DataManager.ts   # CRUD operations, caching
-│   └── TableParser.ts   # Markdown table ↔ TimeEntry
+│   ├── SchemaManager.ts    # Schema configuration (Schema.md) loader & watcher
+│   ├── DataManager.ts      # CRUD operations, caching, multi-section persistence
+│   ├── TableParser.ts      # Markdown AST table, diary, summary parser & generator
+│   └── ReportAggregator.ts # Multi-level report aggregation & KPI calculations
 ├── views/
 │   ├── TimelineView.ts  # Main calendar view
-│   └── ReportsView.ts   # Reports/export view
-└── modals/
-    └── EntryModal.ts    # Create/edit entry form
+│   └── ReportsView.ts   # Reports/export view (1-3 level grouping, KPIs)
+├── modals/
+│   ├── EntryModal.ts    # Dynamic schema-driven create/edit entry form
+│   └── DiaryModal.ts    # Daily reflection diary editor
+└── utils/
+    ├── colors.ts        # Deterministic string-to-palette color hashing
+    ├── Logger.ts        # Centralized debug logging
+    └── TimeFormat.ts    # Time & date calculation utilities
 ```
 
 ## Data Files
 
-Time entries are stored in your vault as markdown tables:
+### 1. Schema Configuration (`Schema.md`)
+Activity fields are configured in a clean Markdown table at:
+```
+<vault>/TimeTracking/Schema.md
+```
+- Defines dynamic activity fields using an Obsidian-native Markdown table (`Field Name`, `Type`, `Required`, `Options`, `Allow Multiple`, `Timeline Role`, `Report Dimension`, `Aliases`).
+- Generated automatically on first run if missing with sensible defaults and markdown tips.
+- Enum option colors are deterministically hashed from string values and stay consistent without requiring manual hex code configuration.
+- Watched for live changes — editing `Schema.md` inside Obsidian automatically reloads the schema and refreshes open views.
+
+### 2. Monthly Time Entries & Diaries
+Time entries and daily diaries are stored in your vault as monthly Markdown files:
 ```
 <vault>/TimeTracking/YYYY-MM.md
 ```
 
-One file per month. Human-readable. Don't edit manually while the plugin is running.
+One file per month. Human-readable. Contains chronological Markdown tables and daily reflection sections. Don't edit tables manually while the plugin is running.
 
 ## Releasing
 

@@ -1,4 +1,5 @@
 {
+  "showUnsupportedFiles": true,
   "pdfExportSettings": {
     "pageSize": "Letter",
     "landscape": false,

@@ -2,224 +2,129 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
 
-**A visual time tracking plugin for Obsidian.** An infinite-scroll timeline to log your hours, hierarchical reports to see where they went, and one-click invoicing to bill for them. Your data stays in your vault as plain markdown tables - no cloud, no sync, no subscriptions.
-
-> [!IMPORTANT]
-> **Experimental: AI-drivable CLI** — There's now a companion command-line tool, **[o-wdttg-cli](https://github.com/plattnum/o-wdttg-cli)**, that exposes this plugin through the new Obsidian CLI. It creates an AI-drivable surface so agents (like Claude) can read, write, and report on your time entries on your behalf. Experimental — build from source for now. Future releases plan to ship pre-built binaries downloadable from the plugin settings.
+**A visual personal time tracking and daily reflection plugin for Obsidian.** An interactive timeline to log your focus blocks, daily reflection diaries co-located with your tracked activities, and configurable multi-level reports to see where your time went. Your data stays in your vault as plain markdown tables and journals — no cloud, no sync, no subscriptions.
 
 ## Why This Exists
 
 I got tired of:
 - SaaS time trackers that take 10 seconds to load
 - Monthly subscriptions for what amounts to a fancy spreadsheet
-- Google Sheets (it works, but it's not fun)
+- Freelance tools forcing hourly billing rates and invoice workflows onto personal life tracking
 - Apps that include "team collaboration features" when I just work alone
 - Syncing conflicts, server outages, and "we're updating our privacy policy" emails
 
-I wanted something **simple**: click, enter time, done. Data lives in my vault as plain markdown. Works offline. Loads instantly. No account required. No telemetry. No upsells.
+I wanted something **focused on personal time allocation and mindful reflection**:
+- Click or drag on a timeline, enter what you focused on, and you're done.
+- Write daily reflections directly alongside your time entries.
+- Fully customize your schema (categories, activities, locations, tags) in a clean Markdown table (`Schema.md`).
+- Data lives in your vault as plain markdown. Works offline. Loads instantly. No account required. No telemetry.
 
-If you need Gantt charts, resource allocation, task managment, or enterprise reporting - this isn't for you. If you just want to track where your hours went so you can bill clients or finally answer "wait, what did I actually do yesterday?".
-
-**No timer feature.** I don't track my work by hitting start/stop on a stopwatch - it just doesn't fit how I work. I enter my time after the fact. If you need a running timer, this plugin isn't for you.
-
-**Not a task manager.** This is purely time tracking - logging hours after the fact. My tasks live in external systems (Jira, Linear, GitHub Issues, etc). I didn't want to integrate with Obsidian Tasks or other task plugins that scan your entire vault. This plugin stays in its lane: you tell it what you worked on and when, it writes that to a table. That's it.
+**No timer feature.** I don't track my work by hitting start/stop on a stopwatch — it just doesn't fit how I work. I enter my time after the fact.
 
 ## Features
 
 ### ∞ Timeline
-Visual day-by-day timeline that scrolls infinitely in both directions. Drag to create entries, drag to move them, resize to adjust duration. Click to edit.
+Visual day-by-day timeline that scrolls smoothly. Drag to create entries, drag to move them, resize handles to adjust duration.
+- **Dynamic card styling**: Colored by your designated category, titled by activity, with badges for location.
+- **Daily diary tray**: Sticky day header with a one-click 📝 diary button to write or read daily reflections.
 
-<img src="docs/infinite-timeline-view-sshot.png" width="50%" alt="Timeline View">
+### Daily Reflection Diaries
+Reflect on your energy, focus, and learnings right inside your monthly file (`TimeTracking/YYYY-MM.md` under `## Daily Diaries`).
+- Word and character counter with instant `Cmd/Ctrl + Enter` save.
+- Timeline header button opens the diary for the day currently visible on screen.
 
-### Simple Data Model
-- **Clients** - Who you're billing (or "Personal" if you're tracking for yourself)
-- **Projects** - What you're working on
-- **Activities** - Type of work (dev, meeting, admin, etc.)
-- **Linked Notes** - Optional wikilink to related notes in your vault
+### Configurable Activity Schema (`Schema.md`)
+Define your own tracking dimensions in `<vault>/TimeTracking/Schema.md`:
+- Pure Markdown table: `Field Name`, `Type`, `Required`, `Options`, `Allow Multiple`, `Timeline Role`, `Report Dimension`, `Aliases`.
+- Automatic deterministic color hashing: consistent colors for categories without tedious hex code editing.
+- Live file watcher: changes made to `Schema.md` reload immediately across your timeline and reports.
 
-That's it. No tags, labels, priorities, estimates, story points, or whatever else PM tools have invented to justify their existence.
+### Multi-Level Reports View (1 to 3 Dimensions)
+Analyze where your hours actually went across customizable hierarchies:
+- Select 1 to 3 grouping dimensions (e.g., **Category → Activity Name → Location**).
+- Summary KPI cards: **Total Time**, **Daily Average**, **Top Focus**, and **Active Days**.
+- Expandable/collapsible tree table with % of parent, % of total, and visual distribution bars.
+- Export to **CSV** or **JSON** preserving all dynamic schema attributes.
 
 ### Plain Markdown Storage
-Your data lives in `TimeTracking/YYYY-MM.md` files as markdown tables:
-
-```markdown
-| Start            | End              | Description     | Client | Project | Activity | Notes |
-| :--------------- | :--------------- | :-------------- | :----- | :------ | :------- | :---- |
-| 2024-01-15 09:00 | 2024-01-15 10:30 | Morning standup | acme   | webapp  | meeting  |       |
-| 2024-01-15 10:30 | 2024-01-15 12:00 | Fix login bug   | acme   | webapp  | dev      |       |
-```
-
-One file per month. Human-readable. Git-friendly. Portable - if this plugin dies, your data doesn't.
-
-### Reports View
-See where your time actually went. Select a date range and get a hierarchical breakdown: **Client → Project → Activity**, with hours and billable amounts at each level. Expand any level to drill down. Export to CSV or JSON when your accountant asks for timesheets.
-
-<img src="docs/time-report-view-sshot.png" width="50%" alt="Reports View">
-
-### Invoice Generation
-Generate markdown invoices directly from the Reports view. Each client row shows an **Invoice** button when there's billable time. Click it to:
-
-1. Enter invoice number, issue date, and payment terms
-2. Due date auto-calculates based on payment terms
-3. Generate a markdown invoice with:
-   - Your "Bill From" info (configured in Settings)
-   - Client's billing address
-   - Line items grouped by project (hours × rate)
-   - Subtotal and total in the client's currency
-
-Invoices are saved to your invoice folder (default: `TimeTracking/Invoices/`) as `{invoice-number}.md`. The generated markdown renders nicely in Obsidian and can be exported to PDF.
-
-### Overlap Detection
-Won't let you accidentally double-book yourself. The timeline shows conflicts in real-time.
-
-### Midnight-Spanning Entries
-Working late? Entries can cross midnight without breaking. The plugin handles multi-day entries correctly.
-
-## Installation
-
-### From Obsidian Community Plugins *(pending approval)*
-Once approved:
-1. Open Settings → Community Plugins
-2. Search for "Where Did The Time Go"
-3. Install and enable
-
-### Manual Installation
-1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
-2. Create folder: `<vault>/.obsidian/plugins/where-did-the-time-go/`
-3. Copy the files into that folder
-4. Enable the plugin in Settings → Community Plugins
-
-### Using BRAT
-1. Install the [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat)
-2. Open BRAT settings → Add Beta Plugin
-3. Enter: `https://github.com/plattnum/where-did-the-time-go`
-4. Enable the plugin in Settings → Community Plugins
-
-## Usage
-
-After enabling, you'll see two icons in the left sidebar:
-
-<img src="docs/left-sidebar-icons.png" width="60" alt="Sidebar Icons">
-
-Click to open the **∞ Timeline** or **Reports** view.
-
-### Creating Entries
-- **Click + drag** on the timeline to create an entry
-- **Click** the + button in the toolbar
-- **Command palette** (`Ctrl/Cmd + P`) → "Create Time Entry"
-- Fill in the details, hit Save
-
-### Editing Entries
-- **Click** an entry card to edit
-- **Drag** entries to move them
-- **Drag edges** to resize (change duration)
-
-### Entry Modal Fields
-
-<img src="docs/new-time-entry-modal.png" width="50%" alt="Entry Modal">
-
-When creating or editing an entry, you'll see these fields:
-
-| Field | Description |
-|-------|-------------|
-| **Start** | Date and time the entry begins. 🧲 magnet button appears if there's an adjacent entry - click to snap to previous entry's end time. |
-| **Duration** | Calculated automatically from start/end. You can also type directly (e.g., "1h 30m", "90m", "1.5h") and end time updates. |
-| **End** | Date and time the entry ends. 🧲 magnet button snaps to next entry's start time if one exists. |
-| **Client** | Required. Who you're billing. Configure clients in Settings. |
-| **Project** | Optional. Filtered to show only projects belonging to the selected client. |
-| **Activity** | Optional. Type of work (dev, meeting, etc.). Filtered by client. |
-| **Description** | What you worked on. Character limit configurable in Settings. |
-| **Linked Note** | Optional path to a related note. Use "Browse" to search existing notes or "Create New" to make one. |
-
-**Overlap detection**: If your entry overlaps with an existing one, the conflicting times highlight red and Save is disabled until you fix it.
-
-### Command Palette
-- `Create Time Entry` - Open entry form directly (pre-fills current time)
-- `Open Timeline` - Open the timeline view
-- `Open Reports` - Open the reports view
-
-## Settings
-
-| Setting | Description |
-|---------|-------------|
-| **Time tracking folder** | Where to store monthly files (default: `TimeTracking`) |
-| **Hide tables in preview** | Wrap tables in `%%` comments. If you open a monthly file directly, Obsidian won't try to render a large table - improves performance for busy months |
-| **Hour height** | Pixels per hour in timeline (200-240) |
-| **Day start/end hour** | Visible range in timeline |
-| **Week start** | Monday or Sunday |
-| **24-hour format** | Toggle 24h vs 12h time display |
-| **Description max length** | Character limit for descriptions (0 = unlimited) |
-| **Bill From name** | Your name or business name for invoices |
-| **Bill From address** | Your billing address (multi-line) for invoices |
-| **Invoice folder** | Where generated invoices are saved (default: `TimeTracking/Invoices`) |
-
-## Clients, Projects & Activities
-
-Configure in Settings:
-
-- **Clients** - Each has a name, color, hourly rate, currency, billing address, and payment terms (for invoicing)
-- **Projects** - Belong to a client, can override the client's hourly rate
-- **Activities** - Work types (dev, meeting, review, etc.) per client
-
-Colors appear as left-border indicators on timeline entries.
-
-## Data Format
-
-Monthly files follow this structure:
-
+Your data lives in `TimeTracking/YYYY-MM.md` files:
 ```markdown
 %%
 ⚠️ WARNING: This file is managed by the "Where Did The Time Go" plugin.
 Do not edit manually - your changes may be overwritten.
 %%
 
-# 2024-01
+# 2026-10
 
-| Start            | End              | Description | Client | Project | Activity | Notes |
-| :--------------- | :--------------- | :---------- | :----- | :------ | :------- | :---- |
-| 2024-01-15 09:00 | 2024-01-15 10:30 | Standup     | acme   | webapp  | meeting  |       |
+%%
+| Start            | End              | Category  | Activity Name          | Location    | Tags             | Notes              |
+| :--------------- | :--------------- | :-------- | :--------------------- | :---------- | :--------------- | :----------------- |
+| 2026-10-15 08:30 | 2026-10-15 10:00 | Deep Work | System architecture    | Home Office | coding, planning | [[ArchitectureDoc]]|
+| 2026-10-15 10:15 | 2026-10-15 11:15 | Fitness   | Morning 5k run         | Gym         | cardio           |                    |
+%%
+
+## Daily Diaries
+
+### 2026-10-15
+High mental clarity this morning. Finished the parser and schema specifications before lunch.
 ```
 
-The `%%` markers hide the table in Obsidian's reading view (configurable in settings).
+One file per month. Human-readable. Git-friendly. Portable — if this plugin dies, your data doesn't.
 
-## FAQ
+### Overlap Detection & Magnetic Snap
+- Live conflict warning prevents accidental double-booking.
+- Magnetic snap buttons (🧲) connect seamlessly to adjacent entries without gaps.
 
-**Q: Can I edit the markdown files directly?**
-A: You can, but the plugin may overwrite your changes. Use the Timeline view.
+### Midnight-Spanning Entries
+Entries can cross midnight cleanly without breaking. Duration math and reports handle multi-day entries seamlessly.
 
-**Q: Does it sync across devices?**
-A: It's just .md files. If your vault syncs (Obsidian Sync, iCloud, Dropbox, Git), your time entries sync.
+## Usage
 
-**Q: Can I query entries with Dataview?**
-A: No. Dataview doesn't parse markdown tables. Your data is portable plain text, but you'll use the Reports view for analysis.
+After enabling, click the ribbon icons on the left:
+- 🕒 **Open Timeline**
+- 📊 **Open Reports**
 
-**Q: What happens if I uninstall the plugin?**
-A: Your data stays. It's just markdown files.
+### Keyboard Shortcuts & Command Palette (`Ctrl/Cmd + P`)
+- `Create Time Entry`: Open entry form directly
+- `Open Timeline`: Open timeline view
+- `Open Reports`: Open reports view
+- `Open Today's Diary`: Open reflection modal for today
+
+## Settings
+
+| Setting | Description |
+|---------|-------------|
+| **Time tracking folder** | Where to store monthly files and Schema.md (default: `TimeTracking`) |
+| **Open Schema.md** | One-click button to open and edit your activity schema |
+| **Reload Schema** | Reload schema definitions into memory |
+| **Hide tables in reading view** | Wrap tables in `%%` comments for cleaner preview rendering |
+| **Hour height** | Pixels per hour in timeline view |
+| **Day start/end hour** | Visible hour range in timeline view |
+| **Week start** | Monday or Sunday |
+| **24-hour format** | Toggle 24h vs 12h time display |
+| **Description max length** | Character limit for descriptions (0 = unlimited) |
+| **Debug mode** | Verbose developer logging in console |
 
 ## Development
 
-The repo includes a test vault at `vaults/where-did-the-time-go-vault/` with:
-- 3 fictitious clients (Acme Rocket Supplies, Umbrella Corporation, Weyland-Yutani)
-- 9 projects and 18 activities
-- 74 test time entries across Nov-Dec 2025
-- Edge cases: midnight-spanning entries, month boundaries, rapid 15-min entries
+A pre-configured test vault is included at `vaults/personal-time-tracking-vault/`.
 
-Run `npm run dev` to build in watch mode - output auto-copies to the test vault. See `docs/DEVELOPMENT.md` for details.
+```bash
+# Install dependencies
+npm install
 
-## Contributing
+# Watch mode (auto-builds and copies to test vault)
+npm run dev
 
-This is my side project - something I hack on when I have spare time. Not accepting pull requests for now, but feel free to open issues for bugs or feature ideas.
+# Run unit tests
+npm test
+
+# Production build
+npm run build
+```
+
+See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for full architecture and test details.
 
 ## License
 
-MIT - Do whatever you want with it.
-
-## Support
-
-If this plugin saves you time, consider buying me a coffee.
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
-
----
-
-*Built because I needed it, shared because maybe you do too.*
+MIT

@@ -1,0 +1,12 @@
+{
+  "timeTrackingFolder": "TimeTracking",
+  "hourHeight": 200,
+  "dayStartHour": 6,
+  "dayEndHour": 22,
+  "use24HourFormat": true,
+  "weekStart": "monday",
+  "autoCreateFolder": true,
+  "descriptionMaxLength": 200,
+  "debugMode": false,
+  "hideTablesInPreview": true
+}

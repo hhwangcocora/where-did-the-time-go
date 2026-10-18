@@ -1,6 +1,7 @@
-import { App, Modal, Setting, DropdownComponent, TextComponent, Notice, FuzzySuggestModal, TFile } from 'obsidian';
-import { TimeEntry, TimeTrackerSettings } from '../types';
+import { App, Modal, Setting, DropdownComponent, TextComponent, TextAreaComponent, Notice, FuzzySuggestModal, TFile } from 'obsidian';
+import { TimeEntry, TimeTrackerSettings, TrackingSchemaConfig, FieldDefinition, DEFAULT_SCHEMA_CONFIG } from '../types';
 import { DataManager } from '../data/DataManager';
+import { SchemaManager } from '../data/SchemaManager';
 import { TableParser } from '../data/TableParser';
 import { Logger } from '../utils/Logger';
 import { TimeInput } from '../components/TimeInput';
@@ -66,6 +67,8 @@ export interface EntryModalData {
 export class EntryModal extends Modal {
     private settings: TimeTrackerSettings;
     private dataManager: DataManager;
+    private schemaManager?: SchemaManager;
+    private schema: TrackingSchemaConfig;
     private data: EntryModalData;
     private onSave: () => void;
 
@@ -75,15 +78,42 @@ export class EntryModal extends Modal {
     private endDateValue: string;
     private endTimeValue: string;
     private durationValue: string; // e.g., "1h 30m" or "90m"
-    private descriptionValue: string;
-    private clientValue: string;
-    private projectValue: string;
-    private activityValue: string;
-    private linkedNoteValue: string;
 
-    // Dropdown references for cascading updates
-    private projectDropdown: DropdownComponent | null = null;
-    private activityDropdown: DropdownComponent | null = null;
+    // Dynamic field values
+    private fieldValues: Record<string, string | string[]> = {};
+
+    // Getters and setters for backwards compatibility
+    get descriptionValue(): string {
+        const val = this.fieldValues['activity_name'] || this.fieldValues['description'];
+        return typeof val === 'string' ? val : (Array.isArray(val) ? val.join(', ') : '');
+    }
+    set descriptionValue(v: string) {
+        this.fieldValues['activity_name'] = v;
+    }
+
+    get projectValue(): string {
+        const val = this.fieldValues['project'];
+        return typeof val === 'string' ? val : '';
+    }
+    set projectValue(v: string) {
+        this.fieldValues['project'] = v;
+    }
+
+    get activityValue(): string {
+        const val = this.fieldValues['category'] || this.fieldValues['activity'];
+        return typeof val === 'string' ? val : '';
+    }
+    set activityValue(v: string) {
+        this.fieldValues['category'] = v;
+    }
+
+    get linkedNoteValue(): string {
+        const val = this.fieldValues['notes'] || this.fieldValues['linkedNote'];
+        return typeof val === 'string' ? val : '';
+    }
+    set linkedNoteValue(v: string) {
+        this.fieldValues['notes'] = v;
+    }
 
     // Cleanup handlers
     private cleanupHandlers: (() => void)[] = [];
@@ -119,15 +149,20 @@ export class EntryModal extends Modal {
         settings: TimeTrackerSettings,
         dataManager: DataManager,
         data: EntryModalData,
-        onSave: () => void
+        onSave: () => void,
+        schemaManager?: SchemaManager
     ) {
         super(app);
         this.settings = settings;
         this.dataManager = dataManager;
         this.data = data;
         this.onSave = onSave;
+        this.schemaManager = schemaManager || this.dataManager?.getSchemaManager?.();
+        this.schema = this.schemaManager ? this.schemaManager.getSchema() : (this.dataManager?.getSchema ? this.dataManager.getSchema() : DEFAULT_SCHEMA_CONFIG);
 
         // Initialize form values
+        this.fieldValues = {};
+
         if (data.mode === 'edit' && data.entry) {
             // Use the computed DateTime objects for accuracy
             this.startDateValue = TableParser.getDateString(data.entry.startDateTime);
@@ -135,11 +170,26 @@ export class EntryModal extends Modal {
             this.endDateValue = TableParser.getDateString(data.entry.endDateTime);
             this.endTimeValue = data.entry.end;
             this.durationValue = this.formatDurationMinutes(data.entry.durationMinutes);
-            this.descriptionValue = data.entry.description;
-            this.clientValue = data.entry.client;
-            this.projectValue = this.resolveProjectName(data.entry.project);
-            this.activityValue = this.resolveActivityName(data.entry.activity);
-            this.linkedNoteValue = data.entry.linkedNote || '';
+
+            if (data.entry.fields) {
+                for (const [key, val] of Object.entries(data.entry.fields)) {
+                    this.fieldValues[key] = val;
+                }
+            }
+
+            // Fallbacks from legacy entry properties
+            if (!this.fieldValues['activity_name'] && data.entry.description) {
+                this.fieldValues['activity_name'] = data.entry.description;
+            }
+            if (!this.fieldValues['category'] && data.entry.activity) {
+                this.fieldValues['category'] = data.entry.activity;
+            }
+            if (!this.fieldValues['project'] && data.entry.project) {
+                this.fieldValues['project'] = data.entry.project;
+            }
+            if (!this.fieldValues['notes'] && data.entry.linkedNote) {
+                this.fieldValues['notes'] = data.entry.linkedNote;
+            }
         } else {
             // Create mode defaults
             const date = data.date || new Date();
@@ -167,13 +217,23 @@ export class EntryModal extends Modal {
             }
 
             this.durationValue = this.calculateDurationFromDates();
-            this.descriptionValue = '';
-            // Default to first active client
-            const activeClients = this.settings.clients.filter(c => !c.archived);
-            this.clientValue = activeClients.length > 0 ? activeClients[0].id : '';
-            this.projectValue = this.resolveProjectName(this.settings.defaultProject);
-            this.activityValue = this.resolveActivityName(this.settings.defaultActivity);
-            this.linkedNoteValue = '';
+
+            // Initialize defaults from schema
+            for (const field of this.schema.fields) {
+                if (field.defaultValue !== undefined && field.defaultValue !== null) {
+                    this.fieldValues[field.id] = field.defaultValue;
+                } else if (field.type === 'enum' && !field.multiple && field.options && field.options.length > 0) {
+                    if (field.required) {
+                        this.fieldValues[field.id] = field.options[0].id;
+                    } else {
+                        this.fieldValues[field.id] = '';
+                    }
+                } else if (field.multiple) {
+                    this.fieldValues[field.id] = [];
+                } else {
+                    this.fieldValues[field.id] = '';
+                }
+            }
         }
     }
 
@@ -275,116 +335,10 @@ export class EntryModal extends Modal {
         this.warningBanner = contentEl.createDiv('overlap-warning-banner');
         this.warningBanner.addClass('is-hidden');
 
-        // Client dropdown (required)
-        new Setting(contentEl)
-            .setName('Client')
-            .addDropdown((dropdown) => {
-                for (const client of this.settings.clients) {
-                    if (!client.archived) {
-                        dropdown.addOption(client.id, client.name);
-                    }
-                }
-                dropdown.setValue(this.clientValue);
-                dropdown.onChange((value) => {
-                    this.clientValue = value;
-                    this.updateProjectDropdown();
-                    this.updateActivityDropdown();
-                });
-            });
-
-        // Project dropdown
-        new Setting(contentEl)
-            .setName('Project')
-            .addDropdown((dropdown) => {
-                this.projectDropdown = dropdown;
-                this.populateProjectDropdown(dropdown);
-                dropdown.setValue(this.projectValue);
-                dropdown.onChange((value) => {
-                    this.projectValue = value;
-                });
-            });
-
-        // Activity dropdown
-        new Setting(contentEl)
-            .setName('Activity')
-            .addDropdown((dropdown) => {
-                this.activityDropdown = dropdown;
-                this.populateActivityDropdown(dropdown);
-                dropdown.setValue(this.activityValue);
-                dropdown.onChange((value) => {
-                    this.activityValue = value;
-                });
-            });
-
-        // Description with character counter in label
-        const maxLen = this.settings.descriptionMaxLength;
-        const descSetting = new Setting(contentEl);
-
-        // Create label with counter
-        const descLabel = descSetting.nameEl;
-        descLabel.setText('Description ');
-        const counterEl = descLabel.createSpan('description-counter');
-        const updateCounter = (len: number) => {
-            if (maxLen > 0) {
-                counterEl.setText(`(${len}/${maxLen})`);
-                counterEl.toggleClass('is-over-limit', len > maxLen);
-                counterEl.toggleClass('is-near-limit', len > maxLen * 0.8 && len <= maxLen);
-            }
-        };
-        updateCounter(this.descriptionValue.length);
-
-        descSetting.addTextArea((text) => {
-            text.setValue(this.descriptionValue);
-            text.setPlaceholder('What did you work on?');
-            text.inputEl.rows = 3;
-
-            text.onChange((value) => {
-                let cleaned = value;
-                if (maxLen > 0 && cleaned.length > maxLen) {
-                    cleaned = cleaned.substring(0, maxLen);
-                    text.setValue(cleaned);
-                }
-                this.descriptionValue = cleaned;
-                updateCounter(cleaned.length);
-            });
-        });
-
-        // Linked note
-        const linkedNoteSetting = new Setting(contentEl)
-            .setName('Linked note');
-
-        let linkedNoteInput: TextComponent;
-        linkedNoteSetting.addText((text) => {
-            linkedNoteInput = text;
-            text.setValue(this.linkedNoteValue);
-            text.setPlaceholder('Enter note path');
-            text.onChange((value) => {
-                this.linkedNoteValue = value;
-            });
-        });
-
-        // Browse existing notes button
-        linkedNoteSetting.addButton((btn) => {
-            btn.setButtonText('Browse')
-                .setTooltip('Select an existing note')
-                .onClick(() => {
-                    new NoteSuggestModal(this.app, (file) => {
-                        // Remove .md extension for the link
-                        const path = file.path.replace(/\.md$/, '');
-                        linkedNoteInput.setValue(path);
-                        this.linkedNoteValue = path;
-                    }).open();
-                });
-        });
-
-        // Create new note button
-        linkedNoteSetting.addButton((btn) => {
-            btn.setButtonText('Create new')
-                .setTooltip('Create a new linked note')
-                .onClick(() => {
-                    this.showCreateNoteInput(contentEl, linkedNoteInput);
-                });
-        });
+        // Render dynamic schema fields
+        for (const field of this.schema.fields) {
+            this.renderSchemaField(contentEl, field);
+        }
 
         // Button row
         const buttonRow = contentEl.createDiv('modal-button-row');
@@ -433,21 +387,159 @@ export class EntryModal extends Modal {
     }
 
     /**
+     * Render a dynamic form input according to field definition
+     */
+    private renderSchemaField(container: HTMLElement, field: FieldDefinition): void {
+        const setting = new Setting(container);
+        const labelText = field.required ? `${field.label} *` : field.label;
+        setting.setName(labelText);
+
+        if (field.type === 'enum') {
+            if (field.multiple) {
+                // Multi-select enum or comma-separated tags
+                const currentVal = this.fieldValues[field.id];
+                const strVal = Array.isArray(currentVal) ? currentVal.join(', ') : (currentVal || '');
+                setting.addText((text) => {
+                    text.setValue(strVal);
+                    text.setPlaceholder(field.ui?.placeholder || field.options?.map(o => o.label).join(', ') || 'Comma-separated');
+                    text.onChange((val) => {
+                        this.fieldValues[field.id] = val
+                            ? val.split(',').map(s => s.trim()).filter(Boolean)
+                            : [];
+                    });
+                });
+            } else {
+                // Single enum: Dropdown
+                setting.addDropdown((dropdown) => {
+                    if (!field.required) {
+                        dropdown.addOption('', '(None)');
+                    }
+                    if (field.options) {
+                        for (const opt of field.options) {
+                            dropdown.addOption(opt.id, opt.label);
+                        }
+                    }
+                    const currentVal = typeof this.fieldValues[field.id] === 'string'
+                        ? (this.fieldValues[field.id] as string)
+                        : '';
+                    dropdown.setValue(currentVal);
+                    dropdown.onChange((val) => {
+                        this.fieldValues[field.id] = val;
+                    });
+                });
+            }
+        } else {
+            // String type
+            if (field.ui?.widget === 'note-link' || field.id === 'notes' || field.label.toLowerCase().includes('note')) {
+                // Wikilink note selector
+                let noteInput: TextComponent;
+                const currentVal = typeof this.fieldValues[field.id] === 'string' ? (this.fieldValues[field.id] as string) : '';
+                setting.addText((text) => {
+                    noteInput = text;
+                    text.setValue(currentVal);
+                    text.setPlaceholder('Enter note path');
+                    text.onChange((val) => {
+                        this.fieldValues[field.id] = val;
+                    });
+                });
+
+                // Browse existing notes button
+                setting.addButton((btn) => {
+                    btn.setButtonText('Browse')
+                        .setTooltip('Select an existing note')
+                        .onClick(() => {
+                            new NoteSuggestModal(this.app, (file) => {
+                                const path = file.path.replace(/\.md$/, '');
+                                noteInput.setValue(path);
+                                this.fieldValues[field.id] = path;
+                            }).open();
+                        });
+                });
+
+                // Create new note button
+                setting.addButton((btn) => {
+                    btn.setButtonText('Create new')
+                        .setTooltip('Create a new linked note')
+                        .onClick(() => {
+                            this.showCreateNoteInput(container, noteInput);
+                        });
+                });
+            } else if (field.multiple) {
+                // Multiple strings (e.g. tags)
+                const currentVal = this.fieldValues[field.id];
+                const strVal = Array.isArray(currentVal) ? currentVal.join(', ') : (currentVal || '');
+                setting.addText((text) => {
+                    text.setValue(strVal);
+                    text.setPlaceholder(field.ui?.placeholder || 'tag1, tag2');
+                    text.onChange((val) => {
+                        this.fieldValues[field.id] = val
+                            ? val.split(',').map(s => s.trim()).filter(Boolean)
+                            : [];
+                    });
+                });
+            } else if (field.ui?.widget === 'textarea' || field.id === 'activity_name' || field.label.toLowerCase().includes('description')) {
+                // Multiline textarea or primary description
+                const maxLen = this.settings.descriptionMaxLength;
+                const currentVal = typeof this.fieldValues[field.id] === 'string' ? (this.fieldValues[field.id] as string) : '';
+
+                if (maxLen > 0) {
+                    const counterEl = setting.nameEl.createSpan('description-counter');
+                    const updateCounter = (len: number) => {
+                        counterEl.setText(` (${len}/${maxLen})`);
+                        counterEl.toggleClass('is-over-limit', len > maxLen);
+                        counterEl.toggleClass('is-near-limit', len > maxLen * 0.8 && len <= maxLen);
+                    };
+                    updateCounter(currentVal.length);
+
+                    setting.addTextArea((text) => {
+                        text.setValue(currentVal);
+                        text.setPlaceholder(field.ui?.placeholder || 'What did you work on?');
+                        text.inputEl.rows = 3;
+                        text.onChange((val) => {
+                            let cleaned = val;
+                            if (maxLen > 0 && cleaned.length > maxLen) {
+                                cleaned = cleaned.substring(0, maxLen);
+                                text.setValue(cleaned);
+                            }
+                            this.fieldValues[field.id] = cleaned;
+                            updateCounter(cleaned.length);
+                        });
+                    });
+                } else {
+                    setting.addTextArea((text) => {
+                        text.setValue(currentVal);
+                        text.setPlaceholder(field.ui?.placeholder || 'What did you work on?');
+                        text.inputEl.rows = 3;
+                        text.onChange((val) => {
+                            this.fieldValues[field.id] = val;
+                        });
+                    });
+                }
+            } else {
+                // Standard text input
+                const currentVal = typeof this.fieldValues[field.id] === 'string' ? (this.fieldValues[field.id] as string) : '';
+                setting.addText((text) => {
+                    text.setValue(currentVal);
+                    if (field.ui?.placeholder) text.setPlaceholder(field.ui.placeholder);
+                    text.onChange((val) => {
+                        this.fieldValues[field.id] = val;
+                    });
+                });
+            }
+        }
+    }
+
+    /**
      * Handle save button click
      */
     private async handleSave(): Promise<void> {
         // Validate the visible controls, including incomplete edits.
         if (this.startTimeInput) this.startTimeValue = this.startTimeInput.getValue();
         if (this.endTimeInput) this.endTimeValue = this.endTimeInput.getValue();
+
         // Validate required fields
         if (!this.startDateValue || !this.startTimeValue || !this.endDateValue || !this.endTimeValue) {
             Logger.error('EntryModal: Missing required fields');
-            return;
-        }
-
-        // Validate client is selected
-        if (!this.clientValue) {
-            new Notice('Please select a client');
             return;
         }
 
@@ -466,6 +558,27 @@ export class EntryModal extends Modal {
             return;
         }
 
+        // Validate required schema fields
+        for (const field of this.schema.fields) {
+            if (field.required) {
+                const val = this.fieldValues[field.id];
+                const isEmpty = val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0);
+                if (isEmpty) {
+                    // Check fallback description
+                    if (field.id === 'activity_name' && this.descriptionValue) {
+                        this.fieldValues[field.id] = this.descriptionValue;
+                        continue;
+                    }
+                    if (field.id === 'category' && (this.activityValue || field.defaultValue)) {
+                        this.fieldValues[field.id] = this.activityValue || (field.defaultValue as string);
+                        continue;
+                    }
+                    new Notice(`Please enter ${field.label}`);
+                    return;
+                }
+            }
+        }
+
         // Format start and end with explicit date+time: "YYYY-MM-DD HH:mm"
         const startForStorage = `${this.startDateValue} ${this.startTimeValue}`;
         const endForStorage = `${this.endDateValue} ${this.endTimeValue}`;
@@ -476,6 +589,21 @@ export class EntryModal extends Modal {
             end: endForStorage
         });
 
+        // Prepare fields dictionary
+        const fields = { ...this.fieldValues };
+
+        // Maintain legacy helper properties for views/backward compatibility
+        const description = typeof fields['activity_name'] === 'string'
+            ? fields['activity_name']
+            : (fields['description'] ? String(fields['description']) : '');
+        const project = typeof fields['project'] === 'string' ? fields['project'] : undefined;
+        const activity = typeof fields['category'] === 'string'
+            ? fields['category']
+            : (typeof fields['activity'] === 'string' ? fields['activity'] : undefined);
+        const linkedNote = typeof fields['notes'] === 'string'
+            ? fields['notes']
+            : (typeof fields['linkedNote'] === 'string' ? fields['linkedNote'] : undefined);
+
         try {
             if (this.data.mode === 'edit' && this.data.entry) {
                 // Update existing entry
@@ -483,11 +611,11 @@ export class EntryModal extends Modal {
                     date: this.startDateValue,
                     start: startForStorage,
                     end: endForStorage,
-                    description: this.descriptionValue,
-                    client: this.clientValue,
-                    project: this.projectValue || undefined,
-                    activity: this.activityValue || undefined,
-                    linkedNote: this.linkedNoteValue || undefined,
+                    description,
+                    project,
+                    activity,
+                    linkedNote,
+                    fields,
                 });
             } else {
                 // Create new entry
@@ -495,11 +623,11 @@ export class EntryModal extends Modal {
                     date: this.startDateValue,
                     start: startForStorage,
                     end: endForStorage,
-                    description: this.descriptionValue,
-                    client: this.clientValue,
-                    project: this.projectValue || undefined,
-                    activity: this.activityValue || undefined,
-                    linkedNote: this.linkedNoteValue || undefined,
+                    description,
+                    project,
+                    activity,
+                    linkedNote,
+                    fields,
                 });
             }
 
@@ -566,43 +694,7 @@ export class EntryModal extends Modal {
         return `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
     }
 
-    /**
-     * Resolve a project ID or name to the actual project name
-     * Handles both old lowercase ID format and new name format
-     */
-    private resolveProjectName(projectIdOrName?: string): string {
-        if (!projectIdOrName) return '';
 
-        // First try exact match by name
-        const byName = this.settings.projects.find(p => p.name === projectIdOrName);
-        if (byName) return byName.name;
-
-        // Then try match by ID (for old entries with lowercased IDs)
-        const byId = this.settings.projects.find(p => p.id === projectIdOrName);
-        if (byId) return byId.name;
-
-        // Return as-is if no match found
-        return projectIdOrName;
-    }
-
-    /**
-     * Resolve an activity ID or name to the actual activity name
-     * Handles both lowercase ID format and display name format
-     */
-    private resolveActivityName(activityIdOrName?: string): string {
-        if (!activityIdOrName) return '';
-
-        // First try exact match by name
-        const byName = this.settings.activities.find(a => a.name === activityIdOrName);
-        if (byName) return byName.name;
-
-        // Then try match by ID (for lowercased slugs)
-        const byId = this.settings.activities.find(a => a.id === activityIdOrName);
-        if (byId) return byId.name;
-
-        // Return as-is if no match found
-        return activityIdOrName;
-    }
 
     /**
      * Convert HH:mm time string to minutes since midnight
@@ -823,81 +915,18 @@ export class EntryModal extends Modal {
      * Loosely coupled - no properties that would need updating if entry changes
      */
     private generateNoteTemplate(_noteName: string): string {
-        // Just a blank note - user can add whatever they want
+        const tags = this.fieldValues['tags'];
+        if (tags) {
+            const tagArr = Array.isArray(tags) ? tags : [tags];
+            const validTags = tagArr.map(t => String(t).trim().replace(/^#/, '')).filter(Boolean);
+            if (validTags.length > 0) {
+                return `---\ntags:\n${validTags.map(t => `  - ${t}`).join('\n')}\n---\n\n`;
+            }
+        }
         return '';
     }
 
-    /**
-     * Populate project dropdown with projects for the selected client
-     */
-    private populateProjectDropdown(dropdown: DropdownComponent): void {
-        // Clear existing options
-        dropdown.selectEl.empty();
 
-        // Add empty option
-        dropdown.addOption('', 'No project');
-
-        // Add projects belonging to the selected client
-        for (const project of this.settings.projects) {
-            if (!project.archived && project.clientId === this.clientValue) {
-                dropdown.addOption(project.name, project.name);
-            }
-        }
-    }
-
-    /**
-     * Update project dropdown when client changes
-     */
-    private updateProjectDropdown(): void {
-        if (this.projectDropdown === null) return;
-
-        this.populateProjectDropdown(this.projectDropdown);
-
-        // Reset selection if current project doesn't belong to new client
-        const currentProject = this.settings.projects.find(
-            p => p.name === this.projectValue && p.clientId === this.clientValue
-        );
-        if (!currentProject) {
-            this.projectValue = '';
-        }
-        this.projectDropdown.setValue(this.projectValue);
-    }
-
-    /**
-     * Populate activity dropdown with activities for the selected client
-     */
-    private populateActivityDropdown(dropdown: DropdownComponent): void {
-        // Clear existing options
-        dropdown.selectEl.empty();
-
-        // Add empty option
-        dropdown.addOption('', 'No activity');
-
-        // Add activities belonging to the selected client
-        for (const activity of this.settings.activities) {
-            if (activity.clientId === this.clientValue) {
-                dropdown.addOption(activity.name, activity.name);
-            }
-        }
-    }
-
-    /**
-     * Update activity dropdown when client changes
-     */
-    private updateActivityDropdown(): void {
-        if (this.activityDropdown === null) return;
-
-        this.populateActivityDropdown(this.activityDropdown);
-
-        // Reset selection if current activity doesn't belong to new client
-        const currentActivity = this.settings.activities.find(
-            a => a.name === this.activityValue && a.clientId === this.clientValue
-        );
-        if (!currentActivity) {
-            this.activityValue = '';
-        }
-        this.activityDropdown.setValue(this.activityValue);
-    }
 
     /**
      * Validate overlap with existing entries and update UI
@@ -1066,35 +1095,25 @@ export class EntryModal extends Modal {
         }
     }
 
-    /**
-     * Get client display name from client ID
-     */
-    private getClientName(clientId: string): string {
-        const client = this.settings.clients.find(c => c.id === clientId);
-        return client?.name || clientId;
-    }
+
 
     /**
-     * Format entry label as CLIENT > PROJECT > ACTIVITY
+     * Format entry label as CATEGORY > ACTIVITY_NAME
      */
     private formatEntryLabel(entry: TimeEntry): string {
         const parts: string[] = [];
 
-        // Client (always present)
-        const clientName = this.getClientName(entry.client);
-        parts.push(clientName);
-
-        // Project (if present)
-        if (entry.project) {
-            parts.push(entry.project);
+        const category = entry.fields?.['category'] || entry.activity;
+        if (category) {
+            parts.push(Array.isArray(category) ? category.join(', ') : String(category));
         }
 
-        // Activity (if present)
-        if (entry.activity) {
-            parts.push(entry.activity);
+        const title = entry.description || entry.fields?.['activity_name'];
+        if (title && title !== category) {
+            parts.push(Array.isArray(title) ? title.join(', ') : String(title));
         }
 
-        return parts.join(' > ');
+        return parts.length > 0 ? parts.join(' > ') : 'Activity';
     }
     /**
      * Check if two entries are same (helper for filtering)
@@ -1138,8 +1157,8 @@ export class EntryModal extends Modal {
             if (this.previousEntry) {
                 this.startSnapHint.removeClass('is-hidden');
                 const prevEnd = this.previousEntry.end;
-                const prevClient = this.getClientName(this.previousEntry.client);
-                this.startSnapHint.setAttribute('aria-label', `Snap to ${prevEnd} (end of ${prevClient})`);
+                const prevLabel = this.formatEntryLabel(this.previousEntry);
+                this.startSnapHint.setAttribute('aria-label', `Snap to ${prevEnd} (end of ${prevLabel})`);
             } else {
                 this.startSnapHint.addClass('is-hidden');
             }
@@ -1150,8 +1169,8 @@ export class EntryModal extends Modal {
             if (this.nextEntry) {
                 this.endSnapHint.removeClass('is-hidden');
                 const nextStart = this.nextEntry.start;
-                const nextClient = this.getClientName(this.nextEntry.client);
-                this.endSnapHint.setAttribute('aria-label', `Snap to ${nextStart} (start of ${nextClient})`);
+                const nextLabel = this.formatEntryLabel(this.nextEntry);
+                this.endSnapHint.setAttribute('aria-label', `Snap to ${nextStart} (start of ${nextLabel})`);
             } else {
                 this.endSnapHint.addClass('is-hidden');
             }

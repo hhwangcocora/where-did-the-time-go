@@ -1,10 +1,12 @@
 import { ItemView, WorkspaceLeaf, Modal, App, setIcon, Notice } from 'obsidian';
-import { VIEW_TYPE_TIMELINE, TimeEntry, TimeTrackerSettings } from '../types';
+import { VIEW_TYPE_TIMELINE, TimeEntry, TimeTrackerSettings, DailyDiary } from '../types';
 import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
 import { EntryModal, EntryModalData } from '../modals/EntryModal';
+import { DiaryModal } from '../modals/DiaryModal';
 import { Logger } from '../utils/Logger';
 import { formatTimeRange } from '../utils/TimeFormat';
+import { getColorForValue } from '../utils/colors';
 
 /**
  * The main timeline view with infinite scrolling
@@ -18,6 +20,7 @@ export class TimelineView extends ItemView {
     private visibleDaysBuffer: number = 1; // Days to render before/after visible area (prev day, today, next day)
     private loadedMonths: Set<string> = new Set();
     private entriesByDate: Map<string, TimeEntry[]> = new Map();
+    private diariesByDate: Map<string, DailyDiary> = new Map();
 
     // DOM references
     private timelineContainer: HTMLElement;
@@ -26,6 +29,7 @@ export class TimelineView extends ItemView {
     private entriesContainer: HTMLElement;
     private visibleDateLabel: HTMLElement;
     private visibleDateTotal: HTMLElement;
+    private headerDiaryBtn: HTMLElement | null = null;
 
     // Dimensions
     private dayHeight: number = 0; // Calculated as 24 * hourHeight
@@ -122,6 +126,7 @@ export class TimelineView extends ItemView {
         // Clear data caches but keep centerDate
         this.loadedMonths.clear();
         this.entriesByDate.clear();
+        this.diariesByDate.clear();
 
         // Re-render entries only (not full container rebuild)
         await this.loadVisibleRange();
@@ -272,6 +277,20 @@ export class TimelineView extends ItemView {
             }
         });
 
+        // Daily diary button (opens diary for the currently visible date)
+        this.headerDiaryBtn = controls.createEl('button', {
+            cls: 'timeline-btn timeline-nav-btn',
+            attr: { 'aria-label': 'Open daily diary' },
+        });
+        setIcon(this.headerDiaryBtn, 'book-open');
+        this.headerDiaryBtn.addEventListener('click', () => {
+            const visibleDate = this.getVisibleDate();
+            const dateStr = TableParser.getDateString(visibleDate);
+            new DiaryModal(this.app, this.dataManager, dateStr, () => {
+                void this.refresh();
+            }).open();
+        });
+
         // Add entry button
         const addBtn = controls.createEl('button', {
             cls: 'timeline-btn timeline-btn-add',
@@ -330,6 +349,22 @@ export class TimelineView extends ItemView {
     }
 
     /**
+     * Get the date currently visible / focal in the viewport
+     */
+    private getVisibleDate(): Date {
+        if (!this.timelineContainer || this.dayHeight === 0) {
+            return new Date(this.centerDate);
+        }
+        const scrollTop = this.timelineContainer.scrollTop;
+        const viewportHeight = this.timelineContainer.clientHeight;
+        const focalOffset = scrollTop + (viewportHeight > 0 ? viewportHeight / 2 : 0);
+        const dayIndex = Math.floor(focalOffset / this.dayHeight) - this.visibleDaysBuffer;
+        const visibleDate = new Date(this.centerDate);
+        visibleDate.setDate(visibleDate.getDate() + dayIndex);
+        return visibleDate;
+    }
+
+    /**
      * Update the visible date label based on scroll position
      */
     private updateVisibleDateLabel(): void {
@@ -364,6 +399,18 @@ export class TimelineView extends ItemView {
                 : [];
             const totalMinutes = entries.reduce((sum, entry) => sum + entry.durationMinutes, 0);
             this.visibleDateTotal.setText(totalMinutes > 0 ? `· ${this.formatDuration(totalMinutes)}` : '');
+        }
+
+        // Update header diary button tooltip & state for the currently visible date
+        if (this.headerDiaryBtn) {
+            const visibleDate = this.getVisibleDate();
+            const dateStr = TableParser.getDateString(visibleDate);
+            const hasDiary = this.diariesByDate.has(dateStr);
+            this.headerDiaryBtn.setAttribute(
+                'aria-label',
+                hasDiary ? `Edit daily diary (${dateStr})` : `Write daily diary (${dateStr})`
+            );
+            this.headerDiaryBtn.toggleClass('has-diary', hasDiary);
         }
     }
 
@@ -441,6 +488,11 @@ export class TimelineView extends ItemView {
                     this.entriesByDate.set(dateStr, entries);
                     Logger.log('loadVisibleRange: set', dateStr, 'with', entries.length, 'entries');
                 }
+
+                // Merge diaries into our map
+                for (const [dateStr, diary] of parsed.diariesByDate) {
+                    this.diariesByDate.set(dateStr, diary);
+                }
             } else {
                 Logger.log('loadVisibleRange: month already loaded', month);
             }
@@ -487,6 +539,20 @@ export class TimelineView extends ItemView {
         // Date text
         const dateText = dayHeader.createSpan('day-header-date');
         dateText.setText(this.formatDayHeader(date));
+
+        // Daily diary button for this day
+        const hasDiary = this.diariesByDate.has(dateStr);
+        const diaryBtn = dayHeader.createEl('button', {
+            cls: `day-header-diary-btn${hasDiary ? ' has-diary' : ''}`,
+            attr: { 'aria-label': hasDiary ? `Edit daily diary (${dateStr})` : `Write daily diary (${dateStr})` },
+        });
+        setIcon(diaryBtn, 'book-open');
+        diaryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            new DiaryModal(this.app, this.dataManager, dateStr, () => {
+                void this.refresh();
+            }).open();
+        });
 
         // Daily total badge (only show if there's logged time)
         if (totalMinutes > 0) {
@@ -550,9 +616,9 @@ export class TimelineView extends ItemView {
         card.dataset.entryDate = entry.date;
         card.dataset.entryLine = String(entry.lineNumber);
 
-        // Client color for left bar and header gradient
-        const clientColor = this.getClientColor(entry.client);
-        card.style.setProperty('--client-color', clientColor);
+        // Dynamic card color
+        const cardColor = this.getEntryColor(entry);
+        card.style.setProperty('--card-color', cardColor);
 
         // Duration-based layout classes
         const is15m = totalDurationMinutes <= 15;
@@ -566,17 +632,9 @@ export class TimelineView extends ItemView {
             card.addClass('entry-60m');
         }
 
-        // Tooltip for hover
+        // Rich tooltip for hover
         const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
-        const tooltipParts = [
-            entry.description || '(No description)',
-            `${timeRange} (${this.formatDuration(entry.durationMinutes)})`,
-            `Client: ${this.getClientName(entry.client)}`,
-        ];
-        if (entry.project) tooltipParts.push(`Project: ${this.getProjectName(entry.project)}`);
-        if (entry.activity) tooltipParts.push(`Activity: ${this.getActivityName(entry.activity)}`);
-        if (entry.linkedNote) tooltipParts.push(`Note: ${entry.linkedNote}`);
-        card.setAttribute('title', tooltipParts.join('\n'));
+        card.setAttribute('title', this.getEntryTooltip(entry));
 
         // === HEADER SECTION ===
         const header = card.createDiv('entry-card-header');
@@ -587,33 +645,20 @@ export class TimelineView extends ItemView {
         const durationBadge = header.createSpan('entry-duration-badge');
         durationBadge.setText(this.formatDuration(entry.durationMinutes));
 
-        // 15m layout: Tiny tags inline in header
+        // 15m layout: Tiny tags inline in header (Location only)
         if (is15m) {
             const tinyTags = header.createDiv('entry-tiny-tags');
+            const badges = this.getEntryBadges(entry);
 
-            // Client tag
-            const clientTag = tinyTags.createSpan('tiny-tag');
-            clientTag.setText(this.getClientName(entry.client).substring(0, 3).toUpperCase());
-            clientTag.style.setProperty('--tag-color', clientColor);
-
-            // Project tag
-            if (entry.project) {
-                const projectTag = tinyTags.createSpan('tiny-tag');
-                projectTag.setText(this.getProjectName(entry.project).substring(0, 3).toUpperCase());
-                projectTag.style.setProperty('--tag-color', this.getProjectColor(entry.project));
+            if (badges.length > 0) {
+                const tag = tinyTags.createSpan('tiny-tag');
+                tag.setText(badges[0].text.substring(0, 3).toUpperCase());
+                tag.style.setProperty('--tag-color', badges[0].color);
             }
 
-            // Activity tag
-            if (entry.activity) {
-                const activityTag = tinyTags.createSpan('tiny-tag');
-                activityTag.setText(this.getActivityName(entry.activity).substring(0, 3).toUpperCase());
-                const actColor = this.getActivityColor(entry.activity);
-                if (actColor) activityTag.style.setProperty('--tag-color', actColor);
-            }
-
-            // Inline description (truncated)
-            const inlineDesc = header.createSpan('entry-inline-desc');
-            inlineDesc.setText(entry.description || '');
+            // Inline title
+            const inlineTitle = header.createSpan('entry-inline-desc');
+            inlineTitle.setText(this.getEntryTitle(entry));
         }
 
         // Icons (right side of header)
@@ -651,34 +696,46 @@ export class TimelineView extends ItemView {
         // === BODY SECTION (30m+ only) ===
         if (!is15m) {
             const body = card.createDiv('entry-card-body');
-            const desc = body.createDiv('entry-body-desc');
-            if (entry.description) {
-                desc.textContent = entry.description;
+            const titleEl = body.createDiv('entry-body-desc');
+            titleEl.textContent = this.getEntryTitle(entry);
+
+            // Tags and notes rendered inside the note area
+            const noteContent = this.getEntryNotesAndTags(entry);
+            if (noteContent) {
+                const notesEl = body.createDiv('entry-body-notes');
+                notesEl.textContent = noteContent;
             }
         }
 
         // === FOOTER / POWERLINE (30m+ only) ===
+        // Only Category and Location render as colored card segments
         if (!is15m) {
             const footer = card.createDiv('entry-card-footer');
+            const schema = this.dataManager.getSchema();
 
-            // Client segment
-            const clientSeg = footer.createSpan('powerline-seg');
-            clientSeg.setText(this.getClientName(entry.client));
-            clientSeg.style.setProperty('--seg-color', clientColor);
-
-            // Project segment
-            if (entry.project) {
-                const projectSeg = footer.createSpan('powerline-seg');
-                projectSeg.setText(this.getProjectName(entry.project));
-                projectSeg.style.setProperty('--seg-color', this.getProjectColor(entry.project));
+            // 1. Category segment (primary colored card)
+            const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+                || schema.fields.find(f => f.id === 'category');
+            let colorValStr = '';
+            if (colorField && entry.fields?.[colorField.id]) {
+                const v = entry.fields[colorField.id];
+                colorValStr = Array.isArray(v) ? v[0] || '' : v;
+            } else if (entry.activity) {
+                colorValStr = entry.activity;
             }
 
-            // Activity segment
-            if (entry.activity) {
-                const activitySeg = footer.createSpan('powerline-seg');
-                activitySeg.setText(this.getActivityName(entry.activity));
-                const actColor = this.getActivityColor(entry.activity);
-                if (actColor) activitySeg.style.setProperty('--seg-color', actColor);
+            if (colorValStr) {
+                const catSeg = footer.createSpan('powerline-seg');
+                catSeg.setText(colorValStr);
+                catSeg.style.setProperty('--seg-color', cardColor);
+            }
+
+            // 2. Location segment (colored card)
+            const badges = this.getEntryBadges(entry);
+            for (const badge of badges) {
+                const seg = footer.createSpan('powerline-seg');
+                seg.setText(badge.text);
+                seg.style.setProperty('--seg-color', badge.color);
             }
         }
 
@@ -1037,50 +1094,176 @@ export class TimelineView extends ItemView {
         return `${year}-${month}-${day}`;
     }
 
-    private getProjectColor(projectId?: string): string {
-        if (!projectId) return '#4f46e5';
-        const project = this.settings.projects.find(p => p.id === projectId || p.name === projectId);
-        return project?.color || '#4f46e5';
+    /**
+     * Get primary color for an entry based on schema field with timelineRole === 'color' (or Category)
+     */
+    private getEntryColor(entry: TimeEntry): string {
+        const schema = this.dataManager.getSchema();
+        const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+            || schema.fields.find(f => f.id === 'category');
+
+        let rawVal = '';
+        if (colorField && entry.fields?.[colorField.id]) {
+            const v = entry.fields[colorField.id];
+            rawVal = Array.isArray(v) ? v[0] || '' : v;
+        } else if (entry.activity) {
+            rawVal = entry.activity;
+        }
+
+        if (!rawVal) return '#4f46e5';
+
+        // Check if matching enum option has an explicit color
+        if (colorField?.options) {
+            const opt = colorField.options.find(o =>
+                o.id.toLowerCase() === rawVal.toLowerCase() ||
+                o.label.toLowerCase() === rawVal.toLowerCase()
+            );
+            if (opt?.color) return opt.color;
+        }
+
+        return getColorForValue(rawVal);
     }
 
     /**
-     * Get color for an activity from settings
+     * Get title for an entry card based on schema field with timelineRole === 'title' (or Activity Name)
      */
-    private getActivityColor(activityName: string): string | undefined {
-        const activity = this.settings.activities.find(a => a.name === activityName || a.id === activityName);
-        return activity?.color;
+    private getEntryTitle(entry: TimeEntry): string {
+        const schema = this.dataManager.getSchema();
+        const titleField = schema.fields.find(f => f.ui?.timelineRole === 'title')
+            || schema.fields.find(f => f.id === 'activity_name');
+
+        if (titleField && entry.fields?.[titleField.id]) {
+            const val = entry.fields[titleField.id];
+            const strVal = Array.isArray(val) ? val.join(', ') : val;
+            if (strVal.trim()) return strVal;
+        }
+
+        if (entry.description?.trim()) {
+            return entry.description;
+        }
+
+        return '(Untitled)';
     }
 
     /**
-     * Get display name for a client from settings
+     * Get badges for an entry card based on schema fields with timelineRole === 'badge'
+     * Excludes tags, which are displayed inside the note section
      */
-    private getClientName(clientId: string): string {
-        const client = this.settings.clients.find(c => c.id === clientId || c.name === clientId);
-        return client?.name || clientId;
+    private getEntryBadges(entry: TimeEntry): Array<{ label: string; text: string; color: string }> {
+        const schema = this.dataManager.getSchema();
+        // Tags should not be rendered as colored card badges; only location / other badge fields
+        const badgeFields = schema.fields.filter(f =>
+            f.ui?.timelineRole === 'badge' &&
+            f.id !== 'tags' &&
+            f.label.toLowerCase() !== 'tags'
+        );
+        const badges: Array<{ label: string; text: string; color: string }> = [];
+
+        for (const field of badgeFields) {
+            const val = entry.fields?.[field.id];
+            if (!val) continue;
+
+            const values = Array.isArray(val) ? val : [val];
+            for (const item of values) {
+                const itemStr = String(item).trim();
+                if (!itemStr) continue;
+
+                // Color from option if enum, else deterministic hash
+                let color = '';
+                if (field.options) {
+                    const opt = field.options.find(o =>
+                        o.id.toLowerCase() === itemStr.toLowerCase() ||
+                        o.label.toLowerCase() === itemStr.toLowerCase()
+                    );
+                    if (opt?.color) color = opt.color;
+                }
+                if (!color) {
+                    color = getColorForValue(itemStr);
+                }
+
+                badges.push({
+                    label: field.label,
+                    text: itemStr,
+                    color,
+                });
+            }
+        }
+
+        // Fallback for legacy entries with project/activity if no dynamic badges
+        if (badges.length === 0) {
+            if (entry.project) {
+                badges.push({ label: 'Project', text: entry.project, color: getColorForValue(entry.project) });
+            }
+            if (entry.activity) {
+                badges.push({ label: 'Activity', text: entry.activity, color: getColorForValue(entry.activity) });
+            }
+        }
+
+        return badges;
     }
 
     /**
-     * Get color for a client from settings
+     * Get notes and tags formatted for display inside the note section of the card
      */
-    private getClientColor(clientId: string): string {
-        const client = this.settings.clients.find(c => c.id === clientId || c.name === clientId);
-        return client?.color || '#4f46e5';
+    private getEntryNotesAndTags(entry: TimeEntry): string {
+        const schema = this.dataManager.getSchema();
+        const parts: string[] = [];
+
+        // 1. Notes (linked note or text)
+        const notesField = schema.fields.find(f => f.id === 'notes' || f.label.toLowerCase() === 'notes');
+        const notesVal = notesField ? entry.fields?.[notesField.id] : undefined;
+        if (notesVal && typeof notesVal === 'string' && notesVal.trim()) {
+            parts.push(notesVal.trim());
+        } else if (entry.linkedNote?.trim()) {
+            parts.push(entry.linkedNote.trim());
+        }
+
+        // 2. Tags inside the note (formatted as #tag1 #tag2)
+        const tagsField = schema.fields.find(f => f.id === 'tags' || f.label.toLowerCase() === 'tags');
+        const tagsVal = tagsField ? entry.fields?.[tagsField.id] : undefined;
+        if (tagsVal) {
+            const tagArr = Array.isArray(tagsVal) ? tagsVal : [tagsVal];
+            const formatted = tagArr
+                .map(t => String(t).trim())
+                .filter(Boolean)
+                .map(t => t.startsWith('#') ? t : `#${t}`);
+            if (formatted.length > 0) {
+                parts.push(formatted.join(' '));
+            }
+        }
+
+        return parts.join(' · ');
     }
 
     /**
-     * Get display name for a project from settings
+     * Build rich hover tooltip with title, time range, and all populated schema attributes
      */
-    private getProjectName(projectId: string): string {
-        const project = this.settings.projects.find(p => p.id === projectId || p.name === projectId);
-        return project?.name || projectId;
-    }
+    private getEntryTooltip(entry: TimeEntry): string {
+        const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
+        const title = this.getEntryTitle(entry);
+        const parts: string[] = [
+            title,
+            `${timeRange} (${this.formatDuration(entry.durationMinutes)})`,
+        ];
 
-    /**
-     * Get display name for an activity from settings
-     */
-    private getActivityName(activityId: string): string {
-        const activity = this.settings.activities.find(a => a.id === activityId || a.name === activityId);
-        return activity?.name || activityId;
+        const schema = this.dataManager.getSchema();
+        for (const field of schema.fields) {
+            if (field.ui?.timelineRole === 'title') continue;
+
+            const val = entry.fields?.[field.id];
+            if (val !== undefined && val !== null && val !== '') {
+                const displayVal = Array.isArray(val) ? val.join(', ') : String(val);
+                if (displayVal.trim()) {
+                    parts.push(`${field.label}: ${displayVal}`);
+                }
+            }
+        }
+
+        if (entry.linkedNote) {
+            parts.push(`Note: ${entry.linkedNote}`);
+        }
+
+        return parts.join('\n');
     }
 
     /**
@@ -1563,9 +1746,10 @@ class ConfirmDeleteModal extends Modal {
             text: this.timeRange,
             cls: 'delete-entry-time',
         });
-        if (this.entry.description) {
+        const title = (this.entry.fields?.['activity_name'] as string) || this.entry.description;
+        if (title) {
             details.createEl('p', {
-                text: this.entry.description,
+                text: title,
                 cls: 'delete-entry-desc',
             });
         }

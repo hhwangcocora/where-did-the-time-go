@@ -1,5 +1,7 @@
 import { TFile, TFolder, Vault, Notice } from 'obsidian';
-import type { TimeEntry, ParsedMonth, TimeTrackerSettings } from '../types';
+import type { TimeEntry, ParsedMonth, TimeTrackerSettings, DailyDiary, TrackingSchemaConfig } from '../types';
+import { DEFAULT_SCHEMA_CONFIG } from '../types';
+import type { SchemaManager } from './SchemaManager';
 import { TableParser } from './TableParser';
 import { Logger } from '../utils/Logger';
 
@@ -10,14 +12,37 @@ import { Logger } from '../utils/Logger';
 export class DataManager {
     private vault: Vault;
     private settings: TimeTrackerSettings;
+    private schemaManager?: SchemaManager;
     private cache: Map<string, ParsedMonth> = new Map();
 
     // Limit cache size to prevent unbounded memory growth
     private static readonly MAX_CACHED_MONTHS = 24;
 
-    constructor(vault: Vault, settings: TimeTrackerSettings) {
+    constructor(vault: Vault, settings: TimeTrackerSettings, schemaManager?: SchemaManager) {
         this.vault = vault;
         this.settings = settings;
+        this.schemaManager = schemaManager;
+    }
+
+    /**
+     * Set or update SchemaManager reference
+     */
+    setSchemaManager(schemaManager: SchemaManager): void {
+        this.schemaManager = schemaManager;
+    }
+
+    /**
+     * Get SchemaManager instance
+     */
+    getSchemaManager(): SchemaManager | undefined {
+        return this.schemaManager;
+    }
+
+    /**
+     * Get active tracking schema
+     */
+    getSchema(): TrackingSchemaConfig {
+        return this.schemaManager ? this.schemaManager.getSchema() : DEFAULT_SCHEMA_CONFIG;
     }
 
     /**
@@ -49,13 +74,34 @@ export class DataManager {
 
         let folder = this.vault.getAbstractFileByPath(folderPath);
 
-        if (!folder) {
+        if (folder instanceof TFolder) {
+            return folder;
+        }
+
+        const existsOnDisk = this.vault.adapter && await this.vault.adapter.exists(folderPath);
+        if (!existsOnDisk) {
             if (this.settings.autoCreateFolder) {
-                await this.vault.createFolder(folderPath);
-                folder = this.vault.getAbstractFileByPath(folderPath);
+                try {
+                    folder = await this.vault.createFolder(folderPath);
+                } catch (err: unknown) {
+                    if (!(err instanceof Error && err.message.toLowerCase().includes('already exists'))) {
+                        throw err;
+                    }
+                }
             } else {
                 throw new Error(`Time tracking folder "${folderPath}" does not exist`);
             }
+        }
+
+        if (!folder) {
+            folder = this.vault.getAbstractFileByPath(folderPath);
+        }
+
+        if (!folder) {
+            const fallbackFolder = new TFolder();
+            fallbackFolder.path = folderPath;
+            fallbackFolder.name = folderPath.split('/').pop() || '';
+            folder = fallbackFolder;
         }
 
         if (!(folder instanceof TFolder)) {
@@ -83,8 +129,17 @@ export class DataManager {
 
         if (!file) {
             // Create the file with header and empty table
-            const content = TableParser.generateMonthFile([], monthStr, this.settings.hideTablesInPreview);
-            file = await this.vault.create(filePath, content);
+            const schema = this.schemaManager?.getSchema();
+            const content = TableParser.generateMonthFile([], monthStr, schema, undefined, undefined, this.settings.hideTablesInPreview);
+            try {
+                file = await this.vault.create(filePath, content);
+            } catch (err: unknown) {
+                if (err instanceof Error && err.message.toLowerCase().includes('already exists')) {
+                    file = this.vault.getAbstractFileByPath(filePath);
+                } else {
+                    throw err;
+                }
+            }
         }
 
         if (!(file instanceof TFile)) {
@@ -101,7 +156,7 @@ export class DataManager {
         // Check cache first
         if (this.cache.has(monthStr)) {
             Logger.log('DataManager: Cache hit for', monthStr);
-            return this.cache.get(monthStr);
+            return this.cache.get(monthStr)!;
         }
 
         const filePath = this.getMonthFilePath(monthStr);
@@ -115,12 +170,14 @@ export class DataManager {
                 month: monthStr,
                 entries: [],
                 entriesByDate: new Map(),
+                diariesByDate: new Map(),
             };
             return emptyMonth;
         }
 
         const content = await this.vault.read(file);
-        const parsed = TableParser.parseMonthFile(content, monthStr);
+        const schema = this.schemaManager?.getSchema();
+        const parsed = TableParser.parseMonthFile(content, monthStr, schema);
         Logger.log('DataManager: Parsed', parsed.entries.length, 'entries');
 
         // Cache the result
@@ -242,8 +299,8 @@ export class DataManager {
         const parsed = await this.loadMonth(monthStr);
         const allEntries = [...parsed.entries, fullEntry];
 
-        // Write the updated file
-        await this.writeMonthFile(monthStr, allEntries);
+        // Write the updated file preserving diaries and summaries
+        await this.writeMonthFile(monthStr, allEntries, parsed.diariesByDate, parsed.aiSummary);
 
         // Invalidate cache
         this.invalidateMonth(monthStr);
@@ -300,13 +357,13 @@ export class DataManager {
             // Remove from old month
             const oldParsed = await this.loadMonth(oldMonthStr);
             const oldEntries = oldParsed.entries.filter(e => !this.isSameEntry(e, oldEntry));
-            await this.writeMonthFile(oldMonthStr, oldEntries);
+            await this.writeMonthFile(oldMonthStr, oldEntries, oldParsed.diariesByDate, oldParsed.aiSummary);
             this.invalidateMonth(oldMonthStr);
 
             // Add to new month
             const newParsed = await this.loadMonth(newMonthStr);
             const newEntries = [...newParsed.entries, updatedEntry];
-            await this.writeMonthFile(newMonthStr, newEntries);
+            await this.writeMonthFile(newMonthStr, newEntries, newParsed.diariesByDate, newParsed.aiSummary);
             this.invalidateMonth(newMonthStr);
         } else {
             // Same month - update in place
@@ -314,7 +371,7 @@ export class DataManager {
             const entries = parsed.entries.map(e =>
                 this.isSameEntry(e, oldEntry) ? updatedEntry : e
             );
-            await this.writeMonthFile(oldMonthStr, entries);
+            await this.writeMonthFile(oldMonthStr, entries, parsed.diariesByDate, parsed.aiSummary);
             this.invalidateMonth(oldMonthStr);
         }
 
@@ -333,7 +390,7 @@ export class DataManager {
         const parsed = await this.loadMonth(monthStr);
         const entries = parsed.entries.filter(e => !this.isSameEntry(e, entry));
 
-        await this.writeMonthFile(monthStr, entries);
+        await this.writeMonthFile(monthStr, entries, parsed.diariesByDate, parsed.aiSummary);
 
         // Invalidate cache
         this.invalidateMonth(monthStr);
@@ -342,11 +399,80 @@ export class DataManager {
     }
 
     /**
-     * Write a month file with the given entries
+     * Get diary reflection for a specific date (YYYY-MM-DD)
      */
-    private async writeMonthFile(monthStr: string, entries: TimeEntry[]): Promise<void> {
+    async getDiary(dateStr: string): Promise<DailyDiary | null> {
+        const monthStr = dateStr.substring(0, 7);
+        const monthData = await this.loadMonth(monthStr);
+        return monthData.diariesByDate.get(dateStr) || null;
+    }
+
+    /**
+     * Save a daily diary reflection
+     */
+    async saveDiary(diary: DailyDiary): Promise<DailyDiary> {
+        const monthStr = diary.date.substring(0, 7);
+        const monthData = await this.loadMonth(monthStr);
+
+        const updatedDiary: DailyDiary = {
+            date: diary.date,
+            content: diary.content.trim(),
+            updatedAt: new Date().toISOString(),
+        };
+
+        monthData.diariesByDate.set(diary.date, updatedDiary);
+
+        await this.writeMonthFile(
+            monthStr,
+            monthData.entries,
+            monthData.diariesByDate,
+            monthData.aiSummary
+        );
+
+        this.invalidateMonth(monthStr);
+        new Notice(`Diary for ${diary.date} saved`);
+        return updatedDiary;
+    }
+
+    /**
+     * Delete a daily diary reflection
+     */
+    async deleteDiary(dateStr: string): Promise<void> {
+        const monthStr = dateStr.substring(0, 7);
+        const monthData = await this.loadMonth(monthStr);
+
+        if (monthData.diariesByDate.has(dateStr)) {
+            monthData.diariesByDate.delete(dateStr);
+            await this.writeMonthFile(
+                monthStr,
+                monthData.entries,
+                monthData.diariesByDate,
+                monthData.aiSummary
+            );
+            this.invalidateMonth(monthStr);
+            new Notice(`Diary for ${dateStr} deleted`);
+        }
+    }
+
+    /**
+     * Write a month file with the given entries, diaries, and AI summary
+     */
+    private async writeMonthFile(
+        monthStr: string,
+        entries: TimeEntry[],
+        diaries?: Map<string, DailyDiary>,
+        aiSummary?: string
+    ): Promise<void> {
         const file = await this.getOrCreateMonthFile(monthStr);
-        const content = TableParser.generateMonthFile(entries, monthStr, this.settings.hideTablesInPreview);
+        const schema = this.schemaManager?.getSchema();
+        const content = TableParser.generateMonthFile(
+            entries,
+            monthStr,
+            schema,
+            diaries,
+            aiSummary,
+            this.settings.hideTablesInPreview
+        );
         await this.vault.modify(file, content);
     }
 

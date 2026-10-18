@@ -131,40 +131,162 @@ __export(main_exports, {
   default: () => WhereDidTheTimeGoPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian9 = require("obsidian");
+var import_obsidian8 = require("obsidian");
+
+// src/utils/colors.ts
+var COLOR_PALETTE = [
+  "#4f46e5",
+  // Indigo
+  "#059669",
+  // Emerald
+  "#d97706",
+  // Amber
+  "#dc2626",
+  // Red
+  "#8b5cf6",
+  // Violet
+  "#0284c7",
+  // Sky
+  "#ec4899",
+  // Pink
+  "#10b981",
+  // Teal
+  "#f97316",
+  // Orange
+  "#6366f1",
+  // Blue-violet
+  "#14b8a6",
+  // Cyan
+  "#84cc16",
+  // Lime
+  "#a855f7",
+  // Purple
+  "#06b6d4",
+  // Cerulean
+  "#e11d48",
+  // Rose
+  "#64748b"
+  // Slate
+];
+function getColorForValue(val) {
+  const normalized = (val || "").trim().toLowerCase();
+  if (!normalized) {
+    return COLOR_PALETTE[0];
+  }
+  let hash = 5381;
+  for (let i = 0; i < normalized.length; i++) {
+    hash = (hash << 5) + hash + normalized.charCodeAt(i);
+    hash |= 0;
+  }
+  const index2 = Math.abs(hash) % COLOR_PALETTE.length;
+  return COLOR_PALETTE[index2];
+}
 
 // src/types.ts
+var DEFAULT_SCHEMA_CONFIG = {
+  version: 1,
+  fields: [
+    {
+      id: "category",
+      label: "Category",
+      type: "enum",
+      required: true,
+      multiple: false,
+      aliases: ["activity", "Activity"],
+      options: [
+        "Deep Work",
+        "Shallow Work",
+        "Fitness",
+        "Learning",
+        "Personal",
+        "Leisure",
+        "Work"
+      ].map((label) => ({
+        id: label.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, ""),
+        label,
+        color: getColorForValue(label)
+      })),
+      defaultValue: "Deep Work",
+      ui: {
+        widget: "dropdown",
+        timelineRole: "color"
+      }
+    },
+    {
+      id: "activity_name",
+      label: "Activity Name",
+      type: "string",
+      required: true,
+      multiple: false,
+      aliases: ["description", "Description", "task", "Task"],
+      ui: {
+        widget: "text",
+        placeholder: "e.g., Code review, Design document",
+        timelineRole: "title"
+      }
+    },
+    {
+      id: "location",
+      label: "Location",
+      type: "enum",
+      required: false,
+      multiple: false,
+      aliases: ["place", "Place"],
+      options: [
+        "Home Office",
+        "Office",
+        "Coffee Shop",
+        "Gym",
+        "Transit",
+        "Movement"
+      ].map((label) => ({
+        id: label.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, ""),
+        label,
+        color: getColorForValue(label)
+      })),
+      ui: {
+        widget: "dropdown",
+        timelineRole: "badge"
+      }
+    },
+    {
+      id: "tags",
+      label: "Tags",
+      type: "string",
+      required: false,
+      multiple: true,
+      aliases: ["Tags"],
+      ui: {
+        widget: "tags",
+        placeholder: "e.g., coding, research, writing",
+        timelineRole: "hidden"
+      }
+    },
+    {
+      id: "notes",
+      label: "Notes",
+      type: "string",
+      required: false,
+      multiple: false,
+      aliases: ["Notes", "Linked Note"],
+      ui: {
+        widget: "note-link",
+        placeholder: "[[Note]] or extra details",
+        timelineRole: "hidden"
+      }
+    }
+  ],
+  defaultReportGrouping: ["category", "activity_name", "location"]
+};
 var DEFAULT_SETTINGS = {
   timeTrackingFolder: "TimeTracking",
-  billFrom: {
-    name: "",
-    address: ""
-  },
-  invoiceFolder: "TimeTracking/Invoices",
   hourHeight: 200,
   dayStartHour: 6,
   dayEndHour: 22,
-  defaultProject: "",
   use24HourFormat: true,
   weekStart: "monday",
   autoCreateFolder: true,
   descriptionMaxLength: 200,
-  clients: [
-    {
-      id: "personal",
-      name: "Personal",
-      color: "#4f46e5",
-      archived: false,
-      rate: 0,
-      currency: "USD",
-      paymentTerms: "N/A"
-    }
-  ],
-  projects: [
-    { id: "default", name: "Default", color: "#4f46e5", archived: false, clientId: "personal" }
-  ],
-  activities: [],
-  defaultActivity: "",
   debugMode: false,
   hideTablesInPreview: true
 };
@@ -172,185 +294,62 @@ var VIEW_TYPE_TIMELINE = "where-did-the-time-go-timeline";
 var VIEW_TYPE_REPORTS = "where-did-the-time-go-reports";
 
 // src/settings.ts
-var import_obsidian2 = require("obsidian");
-
-// src/modals/ClientModal.ts
 var import_obsidian = require("obsidian");
-var ClientModal = class extends import_obsidian.Modal {
-  constructor(app, data, onSave, onDelete) {
-    super(app);
-    this.data = data;
-    this.onSave = onSave;
-    this.onDelete = onDelete;
-    if (data.mode === "edit" && data.client) {
-      this.nameValue = data.client.name;
-      this.colorValue = data.client.color;
-      this.rateValue = data.client.rate;
-      this.currencyValue = data.client.currency;
-      this.addressValue = data.client.address || "";
-      this.emailValue = data.client.email || "";
-      this.taxIdValue = data.client.taxId || "";
-      this.paymentTermsValue = data.client.paymentTerms || "";
-      this.notesValue = data.client.notes || "";
-    } else {
-      this.nameValue = "";
-      this.colorValue = this.getRandomColor();
-      this.rateValue = 100;
-      this.currencyValue = "USD";
-      this.addressValue = "";
-      this.emailValue = "";
-      this.taxIdValue = "";
-      this.paymentTermsValue = "Net 30";
-      this.notesValue = "";
-    }
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("client-modal");
-    contentEl.createEl("h2", {
-      text: this.data.mode === "edit" ? "Edit Client" : "Add Client"
-    });
-    new import_obsidian.Setting(contentEl).setName("Client name").setDesc("Display name for this client").addText((text5) => text5.setPlaceholder("Acme corp").setValue(this.nameValue).onChange((value) => {
-      this.nameValue = value;
-    }));
-    new import_obsidian.Setting(contentEl).setName("Color").setDesc("Color for UI display").addColorPicker((picker) => picker.setValue(this.colorValue).onChange((value) => {
-      this.colorValue = value;
-    }));
-    contentEl.createEl("h3", { text: "Billing" });
-    new import_obsidian.Setting(contentEl).setName("Rate").setDesc("Billing rate for this client").addText((text5) => text5.setPlaceholder("100").setValue(this.rateValue.toString()).onChange((value) => {
-      const num = parseFloat(value);
-      if (!isNaN(num) && num >= 0) {
-        this.rateValue = num;
-      }
-    }));
-    new import_obsidian.Setting(contentEl).setName("Currency").setDesc("Currency code").addDropdown((dropdown) => dropdown.addOption("USD", "USD").addOption("EUR", "EUR").addOption("GBP", "GBP").addOption("CAD", "CAD").addOption("AUD", "AUD").addOption("JPY", "JPY").addOption("CHF", "CHF").addOption("INR", "INR").setValue(this.currencyValue).onChange((value) => {
-      this.currencyValue = value;
-    }));
-    contentEl.createEl("h3", { text: "Invoice details" });
-    new import_obsidian.Setting(contentEl).setName("Billing address").setDesc("Multi-line address for invoices").addTextArea((textarea) => textarea.setPlaceholder("Enter address").setValue(this.addressValue).onChange((value) => {
-      this.addressValue = value;
-    }));
-    new import_obsidian.Setting(contentEl).setName("Email").setDesc("Invoice recipient email").addText((text5) => text5.setPlaceholder("Enter email").setValue(this.emailValue).onChange((value) => {
-      this.emailValue = value;
-    }));
-    new import_obsidian.Setting(contentEl).setName("Tax ID").setDesc("Tax identification number").addText((text5) => text5.setPlaceholder("VAT123456789").setValue(this.taxIdValue).onChange((value) => {
-      this.taxIdValue = value;
-    }));
-    new import_obsidian.Setting(contentEl).setName("Payment terms").setDesc("When payment is due").addDropdown((dropdown) => dropdown.addOption("Due on receipt", "Due on receipt").addOption("Net 15", "Net 15").addOption("Net 30", "Net 30").addOption("Net 45", "Net 45").addOption("Net 60", "Net 60").setValue(this.paymentTermsValue).onChange((value) => {
-      this.paymentTermsValue = value;
-    }));
-    new import_obsidian.Setting(contentEl).setName("Notes").setDesc("Internal notes about this client").addTextArea((textarea) => textarea.setPlaceholder("Optional internal notes...").setValue(this.notesValue).onChange((value) => {
-      this.notesValue = value;
-    }));
-    const buttonRow = contentEl.createDiv("modal-button-row");
-    if (this.data.mode === "edit" && this.onDelete) {
-      const deleteBtn = buttonRow.createEl("button", {
-        text: "Delete",
-        cls: "mod-warning"
-      });
-      deleteBtn.addEventListener("click", () => {
-        this.onDelete();
-        this.close();
-      });
-    }
-    buttonRow.createDiv("button-spacer");
-    const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
-    const saveBtn = buttonRow.createEl("button", {
-      text: "Save",
-      cls: "mod-cta"
-    });
-    saveBtn.addEventListener("click", () => this.handleSave());
-  }
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-  handleSave() {
-    if (!this.nameValue.trim()) {
-      new import_obsidian.Notice("Client name is required");
-      return;
-    }
-    if (this.rateValue < 0) {
-      new import_obsidian.Notice("Rate must be a positive number");
-      return;
-    }
-    const client = {
-      id: this.data.mode === "edit" && this.data.client ? this.data.client.id : this.slugify(this.nameValue),
-      name: this.nameValue.trim(),
-      color: this.colorValue,
-      archived: this.data.mode === "edit" && this.data.client ? this.data.client.archived : false,
-      rate: this.rateValue,
-      currency: this.currencyValue,
-      address: this.addressValue.trim() || void 0,
-      email: this.emailValue.trim() || void 0,
-      taxId: this.taxIdValue.trim() || void 0,
-      paymentTerms: this.paymentTermsValue,
-      notes: this.notesValue.trim() || void 0
-    };
-    this.onSave(client);
-    this.close();
-  }
-  slugify(text5) {
-    return text5.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  }
-  getRandomColor() {
-    const colors = [
-      "#4f46e5",
-      // Indigo
-      "#059669",
-      // Emerald
-      "#e11d48",
-      // Rose
-      "#f59e0b",
-      // Amber
-      "#8b5cf6",
-      // Violet
-      "#06b6d4",
-      // Cyan
-      "#84cc16",
-      // Lime
-      "#f97316"
-      // Orange
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  }
-};
-
-// src/settings.ts
-var TimeTrackerSettingTab = class extends import_obsidian2.PluginSettingTab {
+var TimeTrackerSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
-    this.expandedClients = /* @__PURE__ */ new Set();
     this.plugin = plugin;
   }
   display() {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("p", {
-      text: "Configure your time tracking settings.",
+      text: "Configure your personal time tracking settings.",
       cls: "setting-item-description"
     });
-    new import_obsidian2.Setting(containerEl).setName("Storage").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Time tracking folder").setDesc("Folder where time entries will be stored (relative to vault root)").addText((text5) => text5.setPlaceholder("Enter folder name").setValue(this.plugin.settings.timeTrackingFolder).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Storage").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Time tracking folder").setDesc("Folder where time entries and Schema.md are stored (relative to vault root)").addText((text5) => text5.setPlaceholder("Enter folder name").setValue(this.plugin.settings.timeTrackingFolder).onChange(async (value) => {
       this.plugin.settings.timeTrackingFolder = value || "TimeTracking";
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Auto-create folder").setDesc("Automatically create the time tracking folder if it doesn't exist").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoCreateFolder).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Auto-create folder").setDesc("Automatically create the time tracking folder if it doesn't exist").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoCreateFolder).onChange(async (value) => {
       this.plugin.settings.autoCreateFolder = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Hide tables in reading view").setDesc("Wrap data tables in %% comment markers to hide them in reading view. Disable to see raw table data.").addToggle((toggle) => toggle.setValue(this.plugin.settings.hideTablesInPreview).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Hide tables in reading view").setDesc("Wrap data tables in %% comment markers to hide them in reading view. Disable to see raw table data.").addToggle((toggle) => toggle.setValue(this.plugin.settings.hideTablesInPreview).onChange(async (value) => {
       this.plugin.settings.hideTablesInPreview = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Timeline display").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Hour height").setDesc("Height in pixels for each hour in the timeline view").addSlider((slider) => slider.setLimits(200, 240, 10).setValue(this.plugin.settings.hourHeight).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Activity schema (Schema.md)").setHeading();
+    containerEl.createEl("p", {
+      text: "Categories, activities, locations, tags, and report dimensions are defined in Schema.md within your time tracking folder as an editable Markdown table.",
+      cls: "setting-item-description"
+    });
+    new import_obsidian.Setting(containerEl).setName("Open Schema.md").setDesc("Open Schema.md in your workspace to edit categories, enum values, and timeline roles").addButton((button) => button.setButtonText("Open Schema.md").setCta().onClick(async () => {
+      const schemaPath = `${this.plugin.settings.timeTrackingFolder}/Schema.md`;
+      let file = this.app.vault.getAbstractFileByPath(schemaPath);
+      if (!file && this.plugin.schemaManager) {
+        await this.plugin.schemaManager.loadSchema();
+        file = this.app.vault.getAbstractFileByPath(schemaPath);
+      }
+      if (file instanceof import_obsidian.TFile) {
+        await this.app.workspace.getLeaf().openFile(file);
+      } else {
+        new import_obsidian.Notice(`Could not open ${schemaPath}`);
+      }
+    }));
+    new import_obsidian.Setting(containerEl).setName("Reload schema").setDesc("Force reload Schema.md if you edited it externally").addButton((button) => button.setButtonText("Reload schema").onClick(async () => {
+      if (this.plugin.schemaManager) {
+        await this.plugin.schemaManager.loadSchema();
+        new import_obsidian.Notice("Schema reloaded successfully");
+      }
+    }));
+    new import_obsidian.Setting(containerEl).setName("Timeline display").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Hour height").setDesc("Height in pixels for each hour in the timeline view").addSlider((slider) => slider.setLimits(200, 240, 10).setValue(this.plugin.settings.hourHeight).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.hourHeight = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Day start hour").setDesc("First hour to display in the timeline (0-23)").addDropdown((dropdown) => {
+    new import_obsidian.Setting(containerEl).setName("Day start hour").setDesc("First hour to display in the timeline (0-23)").addDropdown((dropdown) => {
       for (let i = 0; i <= 12; i++) {
         dropdown.addOption(i.toString(), `${i}:00`);
       }
@@ -360,7 +359,7 @@ var TimeTrackerSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("Day end hour").setDesc("Last hour to display in the timeline (0-23)").addDropdown((dropdown) => {
+    new import_obsidian.Setting(containerEl).setName("Day end hour").setDesc("Last hour to display in the timeline (0-23)").addDropdown((dropdown) => {
       for (let i = 18; i <= 24; i++) {
         dropdown.addOption(i.toString(), i === 24 ? "24:00 (midnight)" : `${i}:00`);
       }
@@ -370,273 +369,29 @@ var TimeTrackerSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("24-hour format").setDesc("Use 24-hour time format instead of 12-hour").addToggle((toggle) => toggle.setValue(this.plugin.settings.use24HourFormat).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("24-hour format").setDesc("Use 24-hour time format instead of 12-hour").addToggle((toggle) => toggle.setValue(this.plugin.settings.use24HourFormat).onChange(async (value) => {
       this.plugin.settings.use24HourFormat = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Description max length").setDesc("Maximum characters for entry descriptions (0 = no limit)").addText((text5) => text5.setValue(this.plugin.settings.descriptionMaxLength.toString()).setPlaceholder("200").onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Description max length").setDesc("Maximum characters for entry descriptions (0 = no limit)").addText((text5) => text5.setValue(this.plugin.settings.descriptionMaxLength.toString()).setPlaceholder("200").onChange(async (value) => {
       const num = parseInt(value) || 0;
       this.plugin.settings.descriptionMaxLength = Math.max(0, num);
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Week start").setDesc("First day of the week").addDropdown((dropdown) => dropdown.addOption("monday", "Monday").addOption("sunday", "Sunday").setValue(this.plugin.settings.weekStart).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Week start").setDesc("First day of the week").addDropdown((dropdown) => dropdown.addOption("monday", "Monday").addOption("sunday", "Sunday").setValue(this.plugin.settings.weekStart).onChange(async (value) => {
       this.plugin.settings.weekStart = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian2.Setting(containerEl).setName("Bill from").setHeading();
-    containerEl.createEl("p", {
-      text: "Your billing information that appears on invoices.",
-      cls: "setting-item-description"
-    });
-    new import_obsidian2.Setting(containerEl).setName("Name").setDesc("Your name or business name").addText((text5) => text5.setPlaceholder("Enter name").setValue(this.plugin.settings.billFrom.name).onChange(async (value) => {
-      this.plugin.settings.billFrom.name = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian2.Setting(containerEl).setName("Address").setDesc("Your billing address (multi-line)").addTextArea((textarea) => textarea.setPlaceholder("Enter address").setValue(this.plugin.settings.billFrom.address).onChange(async (value) => {
-      this.plugin.settings.billFrom.address = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian2.Setting(containerEl).setName("Invoice folder").setDesc("Folder where invoices will be saved (created automatically)").addText((text5) => text5.setPlaceholder("Enter folder path").setValue(this.plugin.settings.invoiceFolder).onChange(async (value) => {
-      this.plugin.settings.invoiceFolder = value || "TimeTracking/Invoices";
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian2.Setting(containerEl).setName("Clients").setHeading();
-    containerEl.createEl("p", {
-      text: "Define clients for billing. Projects can be assigned to clients for invoicing.",
-      cls: "setting-item-description"
-    });
-    const clientsContainer = containerEl.createDiv("clients-container");
-    this.renderClientsList(clientsContainer);
-    new import_obsidian2.Setting(containerEl).addButton((button) => button.setButtonText("Add client").setCta().onClick(() => {
-      const modal = new ClientModal(
-        this.app,
-        { mode: "create" },
-        (client) => {
-          this.plugin.settings.clients.push(client);
-          void this.plugin.saveSettings().then(() => {
-            this.renderClientsList(clientsContainer);
-          });
-        }
-      );
-      modal.open();
-    }));
-    new import_obsidian2.Setting(containerEl).setName("Developer").setHeading();
-    new import_obsidian2.Setting(containerEl).setName("Debug mode").setDesc("Enable verbose logging to the developer console (useful for troubleshooting)").addToggle((toggle) => toggle.setValue(this.plugin.settings.debugMode).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Developer").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Debug mode").setDesc("Enable verbose logging to the developer console (useful for troubleshooting)").addToggle((toggle) => toggle.setValue(this.plugin.settings.debugMode).onChange(async (value) => {
       this.plugin.settings.debugMode = value;
       await this.plugin.saveSettings();
     }));
   }
-  renderClientsList(container) {
-    container.empty();
-    if (this.plugin.settings.clients.length === 0) {
-      container.createEl("p", {
-        text: "No clients defined yet. Add a client to start tracking billable time.",
-        cls: "setting-item-description"
-      });
-      return;
-    }
-    this.plugin.settings.clients.forEach((client, clientIndex) => {
-      const isExpanded = this.expandedClients.has(client.id);
-      const clientCard = container.createDiv("client-card");
-      if (client.archived)
-        clientCard.addClass("is-archived");
-      const clientHeader = clientCard.createDiv("client-header");
-      clientHeader.addEventListener("click", () => {
-        if (isExpanded) {
-          this.expandedClients.delete(client.id);
-        } else {
-          this.expandedClients.add(client.id);
-        }
-        this.renderClientsList(container);
-      });
-      const expandIcon = clientHeader.createSpan("client-expand-icon");
-      expandIcon.setText(isExpanded ? "\u25BC" : "\u25B6");
-      const colorDot = clientHeader.createSpan("client-color-dot");
-      colorDot.style.backgroundColor = client.color;
-      clientHeader.createSpan({ text: client.name, cls: "client-name" });
-      const rateDisplay = `${client.currency} ${client.rate}/hr`;
-      clientHeader.createSpan({ text: rateDisplay, cls: "client-rate-badge" });
-      const editBtn = clientHeader.createEl("button", { cls: "client-edit-btn" });
-      editBtn.setText("Edit");
-      editBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const modal = new ClientModal(
-          this.app,
-          { mode: "edit", client },
-          (updatedClient) => {
-            this.plugin.settings.clients[clientIndex] = updatedClient;
-            void this.plugin.saveSettings().then(() => {
-              this.renderClientsList(container);
-            });
-          },
-          () => {
-            this.plugin.settings.projects = this.plugin.settings.projects.filter(
-              (p) => p.clientId !== client.id
-            );
-            this.plugin.settings.activities = this.plugin.settings.activities.filter(
-              (a) => a.clientId !== client.id
-            );
-            this.plugin.settings.clients.splice(clientIndex, 1);
-            void this.plugin.saveSettings().then(() => {
-              this.renderClientsList(container);
-            });
-          }
-        );
-        modal.open();
-      });
-      if (isExpanded) {
-        const expandedContent = clientCard.createDiv("client-expanded");
-        const projectsSection = expandedContent.createDiv("client-section");
-        const projectsHeader = projectsSection.createDiv("client-section-header");
-        projectsHeader.createSpan({ text: "Projects", cls: "client-section-title" });
-        const addProjectBtn = projectsHeader.createEl("button", { text: "Add", cls: "client-add-btn" });
-        addProjectBtn.addEventListener("click", () => {
-          const newProject = {
-            id: `project-${Date.now()}`,
-            name: "New project",
-            color: this.getRandomColor(),
-            archived: false,
-            clientId: client.id
-          };
-          this.plugin.settings.projects.push(newProject);
-          void this.plugin.saveSettings().then(() => {
-            this.renderClientsList(container);
-          });
-        });
-        const clientProjects = this.plugin.settings.projects.filter((p) => p.clientId === client.id);
-        if (clientProjects.length === 0) {
-          projectsSection.createEl("p", { text: "No projects yet", cls: "client-empty-text" });
-        } else {
-          const projectsList = projectsSection.createDiv("client-items-list");
-          clientProjects.forEach((project, _projectIndex) => {
-            const actualIndex = this.plugin.settings.projects.indexOf(project);
-            this.renderProjectItem(projectsList, project, actualIndex, container);
-          });
-        }
-        const activitiesSection = expandedContent.createDiv("client-section");
-        const activitiesHeader = activitiesSection.createDiv("client-section-header");
-        activitiesHeader.createSpan({ text: "Activities", cls: "client-section-title" });
-        const addActivityBtn = activitiesHeader.createEl("button", { text: "Add", cls: "client-add-btn" });
-        addActivityBtn.addEventListener("click", () => {
-          const newActivity = {
-            id: `activity-${Date.now()}`,
-            name: "New activity",
-            color: this.getRandomColor(),
-            clientId: client.id
-          };
-          this.plugin.settings.activities.push(newActivity);
-          void this.plugin.saveSettings().then(() => {
-            this.renderClientsList(container);
-          });
-        });
-        const clientActivities = this.plugin.settings.activities.filter((a) => a.clientId === client.id);
-        if (clientActivities.length === 0) {
-          activitiesSection.createEl("p", { text: "No activities yet", cls: "client-empty-text" });
-        } else {
-          const activitiesList = activitiesSection.createDiv("client-items-list");
-          clientActivities.forEach((activity) => {
-            const actualIndex = this.plugin.settings.activities.indexOf(activity);
-            this.renderActivityItem(activitiesList, activity, actualIndex, container);
-          });
-        }
-      }
-    });
-  }
-  /**
-   * Render a single project item within a client
-   */
-  renderProjectItem(container, project, index2, parentContainer) {
-    const item = container.createDiv("client-item");
-    if (project.archived)
-      item.addClass("is-archived");
-    const colorPicker = item.createEl("input", { type: "color", cls: "client-item-color" });
-    colorPicker.value = project.color;
-    colorPicker.addEventListener("change", () => {
-      project.color = colorPicker.value;
-      void this.plugin.saveSettings();
-    });
-    const nameInput = item.createEl("input", { type: "text", cls: "client-item-name" });
-    nameInput.value = project.name;
-    nameInput.addEventListener("change", () => {
-      project.name = nameInput.value;
-      project.id = this.slugify(nameInput.value);
-      void this.plugin.saveSettings();
-    });
-    const archiveBtn = item.createEl("button", {
-      text: project.archived ? "\u21A9" : "\u{1F4E6}",
-      cls: "client-item-btn"
-    });
-    archiveBtn.title = project.archived ? "Unarchive" : "Archive";
-    archiveBtn.addEventListener("click", () => {
-      project.archived = !project.archived;
-      void this.plugin.saveSettings().then(() => {
-        this.renderClientsList(parentContainer);
-      });
-    });
-    const deleteBtn = item.createEl("button", { text: "\u{1F5D1}", cls: "client-item-btn" });
-    deleteBtn.title = "Delete";
-    deleteBtn.addEventListener("click", () => {
-      this.plugin.settings.projects.splice(index2, 1);
-      void this.plugin.saveSettings().then(() => {
-        this.renderClientsList(parentContainer);
-      });
-    });
-  }
-  /**
-   * Render a single activity item within a client
-   */
-  renderActivityItem(container, activity, index2, parentContainer) {
-    const item = container.createDiv("client-item");
-    const colorPicker = item.createEl("input", { type: "color", cls: "client-item-color" });
-    colorPicker.value = activity.color;
-    colorPicker.addEventListener("change", () => {
-      activity.color = colorPicker.value;
-      void this.plugin.saveSettings();
-    });
-    const nameInput = item.createEl("input", { type: "text", cls: "client-item-name" });
-    nameInput.value = activity.name;
-    nameInput.addEventListener("change", () => {
-      activity.name = nameInput.value;
-      activity.id = this.slugify(nameInput.value);
-      void this.plugin.saveSettings();
-    });
-    const deleteBtn = item.createEl("button", { text: "\u{1F5D1}", cls: "client-item-btn" });
-    deleteBtn.title = "Delete";
-    deleteBtn.addEventListener("click", () => {
-      this.plugin.settings.activities.splice(index2, 1);
-      void this.plugin.saveSettings().then(() => {
-        this.renderClientsList(parentContainer);
-      });
-    });
-  }
-  slugify(text5) {
-    return text5.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  }
-  getRandomColor() {
-    const colors = [
-      "#4f46e5",
-      // Indigo
-      "#059669",
-      // Emerald
-      "#e11d48",
-      // Rose
-      "#f59e0b",
-      // Amber
-      "#8b5cf6",
-      // Violet
-      "#06b6d4",
-      // Cyan
-      "#84cc16",
-      // Lime
-      "#f97316"
-      // Orange
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  }
 };
 
 // src/data/DataManager.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian2 = require("obsidian");
 
 // node_modules/bail/index.js
 function bail(error) {
@@ -10984,11 +10739,11 @@ Logger.prefix = "[WDTTG]";
 
 // src/data/TableParser.ts
 var TableParser = class {
-  /** Create the unified processor for parsing */
+  /** Create unified processor for parsing */
   static createParser() {
     return unified().use(remarkParse).use(remarkGfm);
   }
-  /** Create the unified processor for serializing */
+  /** Create unified processor for serializing */
   static createSerializer() {
     return unified().use(remarkParse).use(remarkGfm).use(remarkStringify, {
       bullet: "-",
@@ -10998,16 +10753,27 @@ var TableParser = class {
     });
   }
   /**
-   * Parse a monthly file content into entries
+   * Parse a monthly file content into MonthlyData (entries, diaries, summary)
    */
-  static parseMonthFile(content3, monthStr) {
+  static parseMonthFile(content3, monthStr, schema) {
     const entries = [];
     const entriesByDate = /* @__PURE__ */ new Map();
+    const diariesByDate = /* @__PURE__ */ new Map();
+    let aiSummary;
+    if (!content3 || !content3.trim()) {
+      return {
+        month: monthStr,
+        entries,
+        entriesByDate,
+        diariesByDate,
+        aiSummary
+      };
+    }
     const processor = this.createParser();
     const tree = processor.parse(content3);
     for (const node2 of tree.children) {
       if (node2.type === "table") {
-        const tableEntries = this.parseTable(node2);
+        const tableEntries = this.parseTable(node2, schema);
         for (const entry of tableEntries) {
           entries.push(entry);
           if (!entriesByDate.has(entry.date)) {
@@ -11017,95 +10783,257 @@ var TableParser = class {
         }
       }
     }
+    this.parseSections(tree, content3, diariesByDate, (summary) => {
+      aiSummary = summary;
+    });
     return {
       month: monthStr,
       entries,
-      entriesByDate
+      entriesByDate,
+      diariesByDate,
+      aiSummary
     };
   }
   /**
-   * Parse a table node into TimeEntry array
+   * Parse table node into TimeEntry array with dynamic schema matching
    */
-  static parseTable(table) {
+  static parseTable(table, schema) {
+    var _a, _b, _c;
     const entries = [];
     const rows = table.children;
     if (rows.length < 2) {
       return entries;
     }
     const headerRow = rows[0];
-    const headerMap = this.getHeaderMap(headerRow);
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      const entry = this.parseRow(row, headerMap, i);
-      if (entry) {
-        entries.push(entry);
+    const headers = headerRow.children.map((cell) => this.getCellText(cell).trim());
+    const hasClientCol = headers.some((h) => h.toLowerCase() === "client");
+    let startIndex = -1;
+    let endIndex = -1;
+    const columnMappings = [];
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i];
+      const norm = h.toLowerCase();
+      if (norm === "start") {
+        startIndex = i;
+        continue;
       }
+      if (norm === "end") {
+        endIndex = i;
+        continue;
+      }
+      let matchedField;
+      if (schema && schema.fields) {
+        matchedField = schema.fields.find(
+          (f) => f.id.toLowerCase() === norm || f.label.toLowerCase() === norm
+        );
+        if (!matchedField) {
+          matchedField = schema.fields.find(
+            (f) => f.aliases && f.aliases.some((a) => a.toLowerCase() === norm)
+          );
+        }
+      } else {
+        matchedField = DEFAULT_SCHEMA_CONFIG.fields.find(
+          (f) => f.id.toLowerCase() === norm || f.label.toLowerCase() === norm
+        );
+        if (!matchedField) {
+          matchedField = DEFAULT_SCHEMA_CONFIG.fields.find(
+            (f) => f.aliases && f.aliases.some((a) => a.toLowerCase() === norm)
+          );
+        }
+      }
+      columnMappings.push({
+        index: i,
+        header: h,
+        field: matchedField
+      });
+    }
+    if (startIndex === -1 || endIndex === -1) {
+      Logger.log("TableParser: Table missing Start or End columns");
+      return entries;
+    }
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const cells = row.children;
+      const startStr = startIndex < cells.length ? this.getCellText(cells[startIndex]) : "";
+      const endStr = endIndex < cells.length ? this.getCellText(cells[endIndex]) : "";
+      if (!startStr || !endStr) {
+        continue;
+      }
+      const startDateTime = this.parseDateTime(startStr);
+      const endDateTime = this.parseDateTime(endStr);
+      if (!startDateTime || !endDateTime) {
+        continue;
+      }
+      const date = this.getDateString(startDateTime);
+      const start = this.formatTime(startDateTime);
+      const end = this.formatTime(endDateTime);
+      const durationMinutes = Math.round((endDateTime.getTime() - startDateTime.getTime()) / 6e4);
+      const fields = {};
+      const unmappedFields = {};
+      let description = "";
+      let client = "";
+      let project;
+      let activity;
+      let linkedNote;
+      for (const col of columnMappings) {
+        const cellText = col.index < cells.length ? this.getCellText(cells[col.index]) : "";
+        const parsedVal = this.parseDescription(cellText);
+        if (col.field) {
+          if (col.field.multiple) {
+            fields[col.field.id] = parsedVal ? parsedVal.split(",").map((s) => s.trim()).filter(Boolean) : [];
+          } else {
+            fields[col.field.id] = parsedVal;
+          }
+          if (col.field.id === "activity_name" || ((_a = col.field.aliases) == null ? void 0 : _a.includes("description"))) {
+            description = parsedVal;
+          }
+          if (col.field.id === "category" || ((_b = col.field.aliases) == null ? void 0 : _b.includes("activity"))) {
+            activity = parsedVal;
+          }
+          if (col.field.id === "project") {
+            project = parsedVal;
+          }
+          if (col.field.id === "notes" || ((_c = col.field.aliases) == null ? void 0 : _c.includes("notes"))) {
+            const wikiMatch = parsedVal.match(/\[\[([^\]]+)\]\]/);
+            linkedNote = wikiMatch ? wikiMatch[1] : parsedVal || void 0;
+          }
+        } else {
+          unmappedFields[col.header] = parsedVal;
+          const normHeader = col.header.toLowerCase();
+          if (normHeader === "client") {
+            client = parsedVal;
+          }
+          if (normHeader === "description" && !description) {
+            description = parsedVal;
+          }
+          if (normHeader === "project" && !project) {
+            project = parsedVal;
+          }
+          if (normHeader === "activity" && !activity) {
+            activity = parsedVal;
+          }
+          if (normHeader === "notes" && !linkedNote) {
+            const wikiMatch = parsedVal.match(/\[\[([^\]]+)\]\]/);
+            linkedNote = wikiMatch ? wikiMatch[1] : parsedVal || void 0;
+          }
+        }
+      }
+      if (!description) {
+        const titleFieldVal = fields["activity_name"] || fields["category"];
+        description = typeof titleFieldVal === "string" ? titleFieldVal : Array.isArray(titleFieldVal) ? titleFieldVal.join(", ") : "";
+      }
+      if (schema) {
+        let missingRequired = false;
+        for (const col of columnMappings) {
+          if (col.field && col.field.required) {
+            const val = fields[col.field.id];
+            if (val === void 0 || val === "" || Array.isArray(val) && val.length === 0) {
+              missingRequired = true;
+              break;
+            }
+          }
+        }
+        if (missingRequired)
+          continue;
+      } else if (hasClientCol && !client) {
+        continue;
+      }
+      entries.push({
+        date,
+        start,
+        end,
+        description,
+        client,
+        project,
+        activity,
+        linkedNote,
+        fields,
+        unmappedFields: Object.keys(unmappedFields).length > 0 ? unmappedFields : void 0,
+        startDateTime,
+        endDateTime,
+        lineNumber: r,
+        durationMinutes
+      });
     }
     return entries;
   }
   /**
-   * Build a map of header name -> column index
+   * Parse ## Daily Diaries and ## Monthly AI Summary sections from markdown AST
    */
-  static getHeaderMap(headerRow) {
-    const map4 = /* @__PURE__ */ new Map();
-    const cells = headerRow.children;
-    for (let i = 0; i < cells.length; i++) {
-      const text5 = this.getCellText(cells[i]).toLowerCase();
-      map4.set(text5, i);
-    }
-    return map4;
-  }
-  /**
-   * Parse a table row into a TimeEntry
-   */
-  static parseRow(row, headerMap, rowIndex) {
-    const cells = row.children;
-    const getValue = (header) => {
-      const index2 = headerMap.get(header.toLowerCase());
-      if (index2 === void 0 || index2 >= cells.length)
-        return "";
-      return this.getCellText(cells[index2]);
-    };
-    const startStr = getValue("start");
-    const endStr = getValue("end");
-    const client = getValue("client");
-    if (!startStr || !endStr || !client) {
-      Logger.log("TableParser: Missing required fields (start, end, or client)");
-      return null;
-    }
-    const startDateTime = this.parseDateTime(startStr);
-    const endDateTime = this.parseDateTime(endStr);
-    if (!startDateTime || !endDateTime) {
-      Logger.log("TableParser: Invalid datetime format");
-      return null;
-    }
-    const date = this.getDateString(startDateTime);
-    const durationMinutes = Math.round((endDateTime.getTime() - startDateTime.getTime()) / 6e4);
-    const start = this.formatTime(startDateTime);
-    const end = this.formatTime(endDateTime);
-    const notes = getValue("notes");
-    let linkedNote;
-    if (notes) {
-      const wikiMatch = notes.match(/\[\[([^\]]+)\]\]/);
-      if (wikiMatch) {
-        linkedNote = wikiMatch[1];
+  static parseSections(tree, content3, diariesByDate, onSummary) {
+    const children = tree.children;
+    for (let i = 0; i < children.length; i++) {
+      const node2 = children[i];
+      if (node2.type !== "heading")
+        continue;
+      const heading2 = node2;
+      const headingText = this.getNodeText(heading2).trim().toLowerCase();
+      if (heading2.depth === 2 && headingText.includes("daily diar")) {
+        for (let j = i + 1; j < children.length; j++) {
+          const sibling = children[j];
+          if (sibling.type === "heading") {
+            const sibHeading = sibling;
+            if (sibHeading.depth <= 2) {
+              break;
+            }
+            if (sibHeading.depth === 3) {
+              const dateStr = this.getNodeText(sibHeading).trim();
+              if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                const diaryContent = this.extractSectionContent(children, j, content3);
+                diariesByDate.set(dateStr, {
+                  date: dateStr,
+                  content: diaryContent
+                });
+              }
+            }
+          }
+        }
+      }
+      if (heading2.depth === 2 && (headingText.includes("summary") || headingText.includes("reflection"))) {
+        const summaryContent = this.extractSectionContent(children, i, content3, 2);
+        if (summaryContent) {
+          onSummary(summaryContent);
+        }
       }
     }
-    return {
-      date,
-      start,
-      end,
-      description: this.parseDescription(getValue("description")),
-      client,
-      project: getValue("project") || void 0,
-      activity: getValue("activity") || void 0,
-      linkedNote,
-      startDateTime,
-      endDateTime,
-      lineNumber: rowIndex,
-      // Row index in table (not file line number)
-      durationMinutes
-    };
+  }
+  /**
+   * Extract raw markdown content between an AST heading and the next heading of equal or higher depth
+   */
+  static extractSectionContent(nodes, headingIndex, fullContent, maxDepth) {
+    var _a, _b, _c, _d;
+    const headingNode = nodes[headingIndex];
+    const targetDepth = maxDepth !== void 0 ? maxDepth : headingNode.depth;
+    let startOffset;
+    if (((_b = (_a = headingNode.position) == null ? void 0 : _a.end) == null ? void 0 : _b.offset) !== void 0) {
+      startOffset = headingNode.position.end.offset;
+    }
+    let endOffset;
+    for (let k = headingIndex + 1; k < nodes.length; k++) {
+      const nextNode = nodes[k];
+      if (nextNode.type === "heading") {
+        const nextHeading = nextNode;
+        if (nextHeading.depth <= targetDepth) {
+          if (((_d = (_c = nextHeading.position) == null ? void 0 : _c.start) == null ? void 0 : _d.offset) !== void 0) {
+            endOffset = nextHeading.position.start.offset;
+          }
+          break;
+        }
+      }
+    }
+    if (startOffset !== void 0) {
+      const rawSlice = endOffset !== void 0 ? fullContent.substring(startOffset, endOffset) : fullContent.substring(startOffset);
+      return rawSlice.trim();
+    }
+    const collectedTexts = [];
+    for (let k = headingIndex + 1; k < nodes.length; k++) {
+      const nextNode = nodes[k];
+      if (nextNode.type === "heading" && nextNode.depth <= targetDepth) {
+        break;
+      }
+      collectedTexts.push(this.getNodeText(nextNode));
+    }
+    return collectedTexts.join("\n\n").trim();
   }
   /**
    * Get text content from a table cell
@@ -11179,37 +11107,108 @@ var TableParser = class {
     return `${this.getDateString(date)} ${this.formatTime(date)}`;
   }
   /**
-   * Generate markdown table content from entries
+   * Generate markdown table content from entries with dynamic schema columns
    */
-  static generateTable(entries) {
+  static generateTable(entries, schema) {
+    var _a, _b, _c;
     const sorted = [...entries].sort(
       (a, b) => a.startDateTime.getTime() - b.startDateTime.getTime()
     );
+    let headers = [];
+    if (schema && schema.fields && schema.fields.length > 0) {
+      headers = ["Start", "End", ...schema.fields.map((f) => f.label)];
+      const unmappedSeen = /* @__PURE__ */ new Set();
+      for (const entry of sorted) {
+        if (entry.unmappedFields) {
+          for (const unmappedCol of Object.keys(entry.unmappedFields)) {
+            if (!headers.some((h) => h.toLowerCase() === unmappedCol.toLowerCase())) {
+              unmappedSeen.add(unmappedCol);
+            }
+          }
+        }
+        if (entry.client && !headers.some((h) => h.toLowerCase() === "client")) {
+          unmappedSeen.add("Client");
+        }
+      }
+      headers.push(...Array.from(unmappedSeen));
+    } else {
+      const hasClient = entries.some((e) => Boolean(e.client));
+      if (hasClient) {
+        headers = [...this.LEGACY_HEADERS];
+      } else {
+        headers = ["Start", "End", "Category", "Activity Name", "Location", "Tags", "Notes"];
+      }
+    }
     const tableRows = [];
     tableRows.push({
       type: "tableRow",
-      children: this.HEADERS.map((h) => ({
+      children: headers.map((h) => ({
         type: "tableCell",
         children: [{ type: "text", value: h }]
       }))
     });
     for (const entry of sorted) {
+      const rowCells = [];
+      for (const h of headers) {
+        const norm = h.toLowerCase();
+        if (norm === "start") {
+          rowCells.push(this.createCell(this.formatDateTime(entry.startDateTime)));
+          continue;
+        }
+        if (norm === "end") {
+          rowCells.push(this.createCell(this.formatDateTime(entry.endDateTime)));
+          continue;
+        }
+        let matchedField;
+        if (schema && schema.fields) {
+          matchedField = schema.fields.find(
+            (f) => f.id.toLowerCase() === norm || f.label.toLowerCase() === norm || f.aliases && f.aliases.some((a) => a.toLowerCase() === norm)
+          );
+        }
+        if (matchedField) {
+          let cellVal = "";
+          const rawVal = (_a = entry.fields) == null ? void 0 : _a[matchedField.id];
+          if (rawVal !== void 0 && rawVal !== null) {
+            cellVal = Array.isArray(rawVal) ? rawVal.join(", ") : String(rawVal);
+          } else {
+            if (matchedField.id === "activity_name")
+              cellVal = entry.description || "";
+            else if (matchedField.id === "category")
+              cellVal = entry.activity || "";
+            else if (matchedField.id === "project")
+              cellVal = entry.project || "";
+            else if (matchedField.id === "notes")
+              cellVal = entry.linkedNote ? `[[${entry.linkedNote}]]` : "";
+          }
+          if (((_b = matchedField.ui) == null ? void 0 : _b.widget) === "note-link" && cellVal && !cellVal.startsWith("[[")) {
+            cellVal = `[[${cellVal}]]`;
+          }
+          rowCells.push(this.createCell(this.serializeDescription(cellVal)));
+        } else {
+          let val = ((_c = entry.unmappedFields) == null ? void 0 : _c[h]) || "";
+          if (!val) {
+            if (norm === "client")
+              val = entry.client || "";
+            else if (norm === "description")
+              val = entry.description || "";
+            else if (norm === "project")
+              val = entry.project || "";
+            else if (norm === "activity")
+              val = entry.activity || "";
+            else if (norm === "notes")
+              val = entry.linkedNote ? `[[${entry.linkedNote}]]` : "";
+          }
+          rowCells.push(this.createCell(this.serializeDescription(val)));
+        }
+      }
       tableRows.push({
         type: "tableRow",
-        children: [
-          this.createCell(this.formatDateTime(entry.startDateTime)),
-          this.createCell(this.formatDateTime(entry.endDateTime)),
-          this.createCell(this.serializeDescription(entry.description)),
-          this.createCell(entry.client),
-          this.createCell(entry.project || ""),
-          this.createCell(entry.activity || ""),
-          this.createCell(entry.linkedNote ? `[[${entry.linkedNote}]]` : "")
-        ]
+        children: rowCells
       });
     }
     const table = {
       type: "table",
-      align: ["left", "left", "left", "left", "left", "left", "left"],
+      align: headers.map(() => "left"),
       children: tableRows
     };
     const root2 = {
@@ -11243,64 +11242,87 @@ var TableParser = class {
     return description.replace(/<br\s*\/?>/gi, "\n");
   }
   /**
-   * Generate a complete month file with header and table
-   * @param entries - Time entries for the month
-   * @param monthStr - Month string (YYYY-MM)
-   * @param hideTable - If true, wrap table in %% comments to hide in reading view
+   * Generate complete month file with header, dynamic table, daily diaries, and AI summary
    */
-  static generateMonthFile(entries, monthStr, hideTable = true) {
-    const header = this.getFileHeader();
-    const table = this.generateTable(entries);
-    if (hideTable) {
-      return `${header}
-# ${monthStr}
-
-%%
-${table}%%
-`;
+  static generateMonthFile(entries, monthStr, schemaOrHideTable, diaries, aiSummary, hideTable = true) {
+    let schema;
+    let effectiveHideTable = hideTable;
+    if (typeof schemaOrHideTable === "boolean") {
+      effectiveHideTable = schemaOrHideTable;
+      schema = void 0;
     } else {
-      return `${header}
+      schema = schemaOrHideTable;
+    }
+    const header = this.getFileHeader();
+    const table = this.generateTable(entries, schema);
+    const tableContent = effectiveHideTable ? `%%
+${table}%%
+` : `${table}
+`;
+    let diarySection = "";
+    const diaryList = diaries instanceof Map ? Array.from(diaries.values()) : Array.isArray(diaries) ? diaries : [];
+    if (diaryList.length > 0) {
+      const sortedDiaries = [...diaryList].filter((d) => Boolean(d.date)).sort((a, b) => a.date.localeCompare(b.date));
+      if (sortedDiaries.length > 0) {
+        diarySection = `
+## Daily Diaries
+
+` + sortedDiaries.map((d) => `### ${d.date}
+${d.content.trim()}`).join("\n\n") + "\n";
+      }
+    }
+    let summarySection = "";
+    if (aiSummary && aiSummary.trim()) {
+      summarySection = `
+## Monthly AI Summary
+
+${aiSummary.trim()}
+`;
+    }
+    return `${header}
 # ${monthStr}
 
-${table}`;
-    }
+${tableContent}${diarySection}${summarySection}`.trimEnd() + "\n";
   }
   /**
    * Warning header added to the top of monthly files
    */
   static getFileHeader() {
     return `%%
-\u26A0\uFE0F WARNING: This file is managed by the "Where Did The Time Go" plugin.
-Do not edit manually - your changes may be overwritten.
+\u26A0\uFE0F WARNING: This file is managed by the Personal Time Tracking plugin.
+Do not edit activities manually - your changes may be overwritten.
 Use the Timeline view to create, edit, or delete entries.
-
-FILE STRUCTURE:
-- One file per month, named YYYY-MM.md
-- Single table containing all entries for the month
-- Entries sorted chronologically by start time
-
-TABLE COLUMNS:
-| Start | End | Description | Client | Project | Activity | Notes |
-- Start (required): Start date and time (YYYY-MM-DD HH:mm)
-- End (required): End date and time (may be next day for overnight entries)
-- Description: Free text describing the activity
-- Client (required): Client for billing
-- Project (optional): Project name
-- Activity (optional): Work type classification
-- Notes (optional): Obsidian wikilink [[linked note]]
-%%
-`;
+%%`;
   }
 };
-/** Expected column headers (case-insensitive matching) */
-TableParser.HEADERS = ["Start", "End", "Description", "Client", "Project", "Activity", "Notes"];
+/** Default legacy column headers */
+TableParser.LEGACY_HEADERS = ["Start", "End", "Description", "Client", "Project", "Activity", "Notes"];
 
 // src/data/DataManager.ts
 var _DataManager = class {
-  constructor(vault, settings) {
+  constructor(vault, settings, schemaManager) {
     this.cache = /* @__PURE__ */ new Map();
     this.vault = vault;
     this.settings = settings;
+    this.schemaManager = schemaManager;
+  }
+  /**
+   * Set or update SchemaManager reference
+   */
+  setSchemaManager(schemaManager) {
+    this.schemaManager = schemaManager;
+  }
+  /**
+   * Get SchemaManager instance
+   */
+  getSchemaManager() {
+    return this.schemaManager;
+  }
+  /**
+   * Get active tracking schema
+   */
+  getSchema() {
+    return this.schemaManager ? this.schemaManager.getSchema() : DEFAULT_SCHEMA_CONFIG;
   }
   /**
    * Update settings reference (called when settings change)
@@ -11326,15 +11348,33 @@ var _DataManager = class {
   async ensureFolderExists() {
     const folderPath = this.settings.timeTrackingFolder;
     let folder = this.vault.getAbstractFileByPath(folderPath);
-    if (!folder) {
+    if (folder instanceof import_obsidian2.TFolder) {
+      return folder;
+    }
+    const existsOnDisk = this.vault.adapter && await this.vault.adapter.exists(folderPath);
+    if (!existsOnDisk) {
       if (this.settings.autoCreateFolder) {
-        await this.vault.createFolder(folderPath);
-        folder = this.vault.getAbstractFileByPath(folderPath);
+        try {
+          folder = await this.vault.createFolder(folderPath);
+        } catch (err) {
+          if (!(err instanceof Error && err.message.toLowerCase().includes("already exists"))) {
+            throw err;
+          }
+        }
       } else {
         throw new Error(`Time tracking folder "${folderPath}" does not exist`);
       }
     }
-    if (!(folder instanceof import_obsidian3.TFolder)) {
+    if (!folder) {
+      folder = this.vault.getAbstractFileByPath(folderPath);
+    }
+    if (!folder) {
+      const fallbackFolder = new import_obsidian2.TFolder();
+      fallbackFolder.path = folderPath;
+      fallbackFolder.name = folderPath.split("/").pop() || "";
+      folder = fallbackFolder;
+    }
+    if (!(folder instanceof import_obsidian2.TFolder)) {
       throw new Error(`"${folderPath}" is not a folder`);
     }
     return folder;
@@ -11349,14 +11389,24 @@ var _DataManager = class {
    * Get or create the monthly file for a given month
    */
   async getOrCreateMonthFile(monthStr) {
+    var _a;
     await this.ensureFolderExists();
     const filePath = this.getMonthFilePath(monthStr);
     let file = this.vault.getAbstractFileByPath(filePath);
     if (!file) {
-      const content3 = TableParser.generateMonthFile([], monthStr, this.settings.hideTablesInPreview);
-      file = await this.vault.create(filePath, content3);
+      const schema = (_a = this.schemaManager) == null ? void 0 : _a.getSchema();
+      const content3 = TableParser.generateMonthFile([], monthStr, schema, void 0, void 0, this.settings.hideTablesInPreview);
+      try {
+        file = await this.vault.create(filePath, content3);
+      } catch (err) {
+        if (err instanceof Error && err.message.toLowerCase().includes("already exists")) {
+          file = this.vault.getAbstractFileByPath(filePath);
+        } else {
+          throw err;
+        }
+      }
     }
-    if (!(file instanceof import_obsidian3.TFile)) {
+    if (!(file instanceof import_obsidian2.TFile)) {
       throw new Error(`"${filePath}" is not a file`);
     }
     return file;
@@ -11365,6 +11415,7 @@ var _DataManager = class {
    * Load entries for a specific month
    */
   async loadMonth(monthStr) {
+    var _a;
     if (this.cache.has(monthStr)) {
       Logger.log("DataManager: Cache hit for", monthStr);
       return this.cache.get(monthStr);
@@ -11372,17 +11423,19 @@ var _DataManager = class {
     const filePath = this.getMonthFilePath(monthStr);
     Logger.log("DataManager: Loading file", filePath);
     const file = this.vault.getAbstractFileByPath(filePath);
-    if (!file || !(file instanceof import_obsidian3.TFile)) {
+    if (!file || !(file instanceof import_obsidian2.TFile)) {
       Logger.log("DataManager: File not found");
       const emptyMonth = {
         month: monthStr,
         entries: [],
-        entriesByDate: /* @__PURE__ */ new Map()
+        entriesByDate: /* @__PURE__ */ new Map(),
+        diariesByDate: /* @__PURE__ */ new Map()
       };
       return emptyMonth;
     }
     const content3 = await this.vault.read(file);
-    const parsed = TableParser.parseMonthFile(content3, monthStr);
+    const schema = (_a = this.schemaManager) == null ? void 0 : _a.getSchema();
+    const parsed = TableParser.parseMonthFile(content3, monthStr, schema);
     Logger.log("DataManager: Parsed", parsed.entries.length, "entries");
     this.cache.set(monthStr, parsed);
     if (this.cache.size > _DataManager.MAX_CACHED_MONTHS) {
@@ -11468,9 +11521,9 @@ var _DataManager = class {
     }
     const parsed = await this.loadMonth(monthStr);
     const allEntries = [...parsed.entries, fullEntry];
-    await this.writeMonthFile(monthStr, allEntries);
+    await this.writeMonthFile(monthStr, allEntries, parsed.diariesByDate, parsed.aiSummary);
     this.invalidateMonth(monthStr);
-    new import_obsidian3.Notice("Time entry created");
+    new import_obsidian2.Notice("Time entry created");
     return fullEntry;
   }
   /**
@@ -11506,21 +11559,21 @@ var _DataManager = class {
       Logger.log("Month changed from", oldMonthStr, "to", newMonthStr);
       const oldParsed = await this.loadMonth(oldMonthStr);
       const oldEntries = oldParsed.entries.filter((e) => !this.isSameEntry(e, oldEntry));
-      await this.writeMonthFile(oldMonthStr, oldEntries);
+      await this.writeMonthFile(oldMonthStr, oldEntries, oldParsed.diariesByDate, oldParsed.aiSummary);
       this.invalidateMonth(oldMonthStr);
       const newParsed = await this.loadMonth(newMonthStr);
       const newEntries = [...newParsed.entries, updatedEntry];
-      await this.writeMonthFile(newMonthStr, newEntries);
+      await this.writeMonthFile(newMonthStr, newEntries, newParsed.diariesByDate, newParsed.aiSummary);
       this.invalidateMonth(newMonthStr);
     } else {
       const parsed = await this.loadMonth(oldMonthStr);
       const entries = parsed.entries.map(
         (e) => this.isSameEntry(e, oldEntry) ? updatedEntry : e
       );
-      await this.writeMonthFile(oldMonthStr, entries);
+      await this.writeMonthFile(oldMonthStr, entries, parsed.diariesByDate, parsed.aiSummary);
       this.invalidateMonth(oldMonthStr);
     }
-    new import_obsidian3.Notice("Time entry updated");
+    new import_obsidian2.Notice("Time entry updated");
     return updatedEntry;
   }
   /**
@@ -11530,16 +11583,73 @@ var _DataManager = class {
     const monthStr = entry.date.substring(0, 7);
     const parsed = await this.loadMonth(monthStr);
     const entries = parsed.entries.filter((e) => !this.isSameEntry(e, entry));
-    await this.writeMonthFile(monthStr, entries);
+    await this.writeMonthFile(monthStr, entries, parsed.diariesByDate, parsed.aiSummary);
     this.invalidateMonth(monthStr);
-    new import_obsidian3.Notice("Time entry deleted");
+    new import_obsidian2.Notice("Time entry deleted");
   }
   /**
-   * Write a month file with the given entries
+   * Get diary reflection for a specific date (YYYY-MM-DD)
    */
-  async writeMonthFile(monthStr, entries) {
+  async getDiary(dateStr) {
+    const monthStr = dateStr.substring(0, 7);
+    const monthData = await this.loadMonth(monthStr);
+    return monthData.diariesByDate.get(dateStr) || null;
+  }
+  /**
+   * Save a daily diary reflection
+   */
+  async saveDiary(diary) {
+    const monthStr = diary.date.substring(0, 7);
+    const monthData = await this.loadMonth(monthStr);
+    const updatedDiary = {
+      date: diary.date,
+      content: diary.content.trim(),
+      updatedAt: new Date().toISOString()
+    };
+    monthData.diariesByDate.set(diary.date, updatedDiary);
+    await this.writeMonthFile(
+      monthStr,
+      monthData.entries,
+      monthData.diariesByDate,
+      monthData.aiSummary
+    );
+    this.invalidateMonth(monthStr);
+    new import_obsidian2.Notice(`Diary for ${diary.date} saved`);
+    return updatedDiary;
+  }
+  /**
+   * Delete a daily diary reflection
+   */
+  async deleteDiary(dateStr) {
+    const monthStr = dateStr.substring(0, 7);
+    const monthData = await this.loadMonth(monthStr);
+    if (monthData.diariesByDate.has(dateStr)) {
+      monthData.diariesByDate.delete(dateStr);
+      await this.writeMonthFile(
+        monthStr,
+        monthData.entries,
+        monthData.diariesByDate,
+        monthData.aiSummary
+      );
+      this.invalidateMonth(monthStr);
+      new import_obsidian2.Notice(`Diary for ${dateStr} deleted`);
+    }
+  }
+  /**
+   * Write a month file with the given entries, diaries, and AI summary
+   */
+  async writeMonthFile(monthStr, entries, diaries, aiSummary) {
+    var _a;
     const file = await this.getOrCreateMonthFile(monthStr);
-    const content3 = TableParser.generateMonthFile(entries, monthStr, this.settings.hideTablesInPreview);
+    const schema = (_a = this.schemaManager) == null ? void 0 : _a.getSchema();
+    const content3 = TableParser.generateMonthFile(
+      entries,
+      monthStr,
+      schema,
+      diaries,
+      aiSummary,
+      this.settings.hideTablesInPreview
+    );
     await this.vault.modify(file, content3);
   }
   /**
@@ -11672,11 +11782,770 @@ var DataManager = _DataManager;
 // Limit cache size to prevent unbounded memory growth
 DataManager.MAX_CACHED_MONTHS = 24;
 
+// src/data/SchemaManager.ts
+var import_obsidian3 = require("obsidian");
+var SchemaManager = class {
+  constructor(vault, settings) {
+    this.schema = DEFAULT_SCHEMA_CONFIG;
+    this.isLoaded = false;
+    this.vault = vault;
+    this.settings = settings;
+  }
+  /**
+   * Update settings reference
+   */
+  updateSettings(settings) {
+    this.settings = settings;
+  }
+  /**
+   * Get path to the Schema.md file in the vault
+   */
+  getSchemaFilePath() {
+    return `${this.settings.timeTrackingFolder}/Schema.md`;
+  }
+  /**
+   * Ensure the root tracking folder exists
+   */
+  async ensureFolderExists() {
+    const folderPath = this.settings.timeTrackingFolder;
+    let folder = this.vault.getAbstractFileByPath(folderPath);
+    if (folder instanceof import_obsidian3.TFolder) {
+      return folder;
+    }
+    const existsOnDisk = this.vault.adapter && await this.vault.adapter.exists(folderPath);
+    if (!existsOnDisk) {
+      if (this.settings.autoCreateFolder) {
+        try {
+          folder = await this.vault.createFolder(folderPath);
+        } catch (err) {
+          if (!(err instanceof Error && err.message.toLowerCase().includes("already exists"))) {
+            throw err;
+          }
+        }
+      } else {
+        throw new Error(`Time tracking folder "${folderPath}" does not exist`);
+      }
+    }
+    if (!folder) {
+      folder = this.vault.getAbstractFileByPath(folderPath);
+    }
+    if (!folder) {
+      const fallbackFolder = new import_obsidian3.TFolder();
+      fallbackFolder.path = folderPath;
+      fallbackFolder.name = folderPath.split("/").pop() || "";
+      folder = fallbackFolder;
+    }
+    if (!(folder instanceof import_obsidian3.TFolder)) {
+      throw new Error(`"${folderPath}" is not a folder`);
+    }
+    return folder;
+  }
+  /**
+   * Load the schema from Schema.md.
+   * If the file does not exist, automatically creates it with DEFAULT_SCHEMA_MARKDOWN.
+   * If the table is unparseable or empty, safely retains the active or default schema.
+   */
+  async loadSchema() {
+    const filePath = this.getSchemaFilePath();
+    let rawContent = null;
+    const file = this.vault.getAbstractFileByPath(filePath);
+    if (file instanceof import_obsidian3.TFile) {
+      try {
+        rawContent = await this.vault.read(file);
+      } catch (err) {
+        Logger.error("SchemaManager: Error reading Schema.md from vault:", err);
+      }
+    } else if (this.vault.adapter && await this.vault.adapter.exists(filePath)) {
+      try {
+        rawContent = await this.vault.adapter.read(filePath);
+      } catch (err) {
+        Logger.error("SchemaManager: Error reading Schema.md from adapter:", err);
+      }
+    }
+    if (rawContent === null) {
+      const existsOnDisk = this.vault.adapter && await this.vault.adapter.exists(filePath);
+      if (!file && !existsOnDisk) {
+        Logger.debug("SchemaManager: Schema.md not found, initializing with default schema markdown");
+        try {
+          await this.saveSchema(DEFAULT_SCHEMA_CONFIG);
+        } catch (err) {
+          Logger.error("SchemaManager: Failed to create default Schema.md:", err);
+        }
+      }
+      this.schema = DEFAULT_SCHEMA_CONFIG;
+      this.isLoaded = true;
+      return this.schema;
+    }
+    try {
+      const parsed = this.parseSchemaMarkdown(rawContent);
+      if (parsed && parsed.fields.length > 0) {
+        this.schema = parsed;
+        this.isLoaded = true;
+        Logger.debug("SchemaManager: Successfully loaded schema with", this.schema.fields.length, "fields from Schema.md");
+        return this.schema;
+      } else {
+        if (this.isLoaded) {
+          Logger.debug("SchemaManager: Incomplete or empty table in Schema.md while editing, retaining active schema");
+        } else {
+          Logger.error("SchemaManager: No valid fields parsed from Schema.md on initial load, falling back to default schema");
+          this.schema = DEFAULT_SCHEMA_CONFIG;
+          this.isLoaded = true;
+        }
+        return this.schema;
+      }
+    } catch (err) {
+      if (this.isLoaded) {
+        Logger.debug("SchemaManager: Transient error parsing Schema.md while editing (retaining active schema):", err instanceof Error ? err.message : err);
+      } else {
+        Logger.error("SchemaManager: Error parsing Schema.md on initial load:", err);
+        this.schema = DEFAULT_SCHEMA_CONFIG;
+        this.isLoaded = true;
+      }
+      return this.schema;
+    }
+  }
+  /**
+   * Save a schema configuration to Schema.md
+   */
+  async saveSchema(config) {
+    await this.ensureFolderExists();
+    const filePath = this.getSchemaFilePath();
+    const content3 = this.generateSchemaMarkdown(config);
+    const file = this.vault.getAbstractFileByPath(filePath);
+    if (file instanceof import_obsidian3.TFile) {
+      await this.vault.modify(file, content3);
+    } else if (this.vault.adapter && await this.vault.adapter.exists(filePath)) {
+      await this.vault.adapter.write(filePath, content3);
+    } else {
+      try {
+        await this.vault.create(filePath, content3);
+      } catch (err) {
+        if (err instanceof Error && err.message.toLowerCase().includes("already exists") && this.vault.adapter) {
+          await this.vault.adapter.write(filePath, content3);
+        } else {
+          throw err;
+        }
+      }
+    }
+    this.schema = config;
+    this.isLoaded = true;
+    Logger.debug("SchemaManager: Saved Schema.md with", config.fields.length, "fields");
+  }
+  /**
+   * Parse markdown content containing a schema table into TrackingSchemaConfig
+   */
+  parseSchemaMarkdown(content3) {
+    const lines = content3.split(/\r?\n/);
+    let headerLineIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("|") && /field/i.test(line)) {
+        headerLineIndex = i;
+        break;
+      }
+    }
+    if (headerLineIndex === -1) {
+      return { version: 1, fields: [], defaultReportGrouping: [] };
+    }
+    const headerCells = lines[headerLineIndex].split("|").map((c) => c.trim().toLowerCase()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+    const fieldIndex = headerCells.findIndex((h) => h.includes("field") || h.includes("name"));
+    const typeIndex = headerCells.findIndex((h) => h.includes("type"));
+    const requiredIndex = headerCells.findIndex((h) => h.includes("require"));
+    const optionsIndex = headerCells.findIndex((h) => h.includes("option") || h.includes("enum") || h.includes("value"));
+    const multipleIndex = headerCells.findIndex((h) => h.includes("multi"));
+    const roleIndex = headerCells.findIndex((h) => h.includes("role"));
+    const reportIndex = headerCells.findIndex((h) => h.includes("report") || h.includes("dimension") || h.includes("group"));
+    const aliasesIndex = headerCells.findIndex((h) => h.includes("alias"));
+    if (fieldIndex === -1) {
+      return { version: 1, fields: [], defaultReportGrouping: [] };
+    }
+    const fields = [];
+    const reportDimensions = [];
+    for (let i = headerLineIndex + 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith("|")) {
+        if (fields.length > 0)
+          break;
+        continue;
+      }
+      if (line.includes("---")) {
+        continue;
+      }
+      const rawCells = line.split("|");
+      const cells = rawCells.slice(1, -1).map((c) => c.trim());
+      const fieldName = (cells[fieldIndex] || "").trim();
+      if (!fieldName)
+        continue;
+      const id = fieldName.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+      const rawType = typeIndex !== -1 ? (cells[typeIndex] || "").trim().toLowerCase() : "";
+      const type = rawType.includes("enum") ? "enum" : "string";
+      const rawRequired = requiredIndex !== -1 ? (cells[requiredIndex] || "").trim().toLowerCase() : "";
+      const required = /^(yes|true|y)$/i.test(rawRequired);
+      const rawMultiple = multipleIndex !== -1 ? (cells[multipleIndex] || "").trim().toLowerCase() : "";
+      const multiple = /^(yes|true|y|multi)/i.test(rawMultiple);
+      let options;
+      let defaultValue;
+      if (type === "enum") {
+        const rawOpts = optionsIndex !== -1 ? (cells[optionsIndex] || "").trim() : "";
+        if (rawOpts) {
+          const parsedOpts = rawOpts.split(",").map((o) => o.trim()).filter((o) => o.length > 0);
+          options = parsedOpts.map((optLabel) => ({
+            id: optLabel.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, ""),
+            label: optLabel,
+            color: getColorForValue(optLabel)
+          }));
+          if (options.length > 0) {
+            defaultValue = options[0].label;
+          }
+        }
+      }
+      const rawRole = roleIndex !== -1 ? (cells[roleIndex] || "").trim().toLowerCase() : "";
+      let timelineRole;
+      if (rawRole.includes("color"))
+        timelineRole = "color";
+      else if (rawRole.includes("title"))
+        timelineRole = "title";
+      else if (rawRole.includes("badge"))
+        timelineRole = "badge";
+      else if (rawRole.includes("hidden"))
+        timelineRole = "hidden";
+      else {
+        if (type === "enum" && !fields.some((f) => {
+          var _a;
+          return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+        }))
+          timelineRole = "color";
+        else if (type === "string" && !fields.some((f) => {
+          var _a;
+          return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "title";
+        }))
+          timelineRole = "title";
+        else
+          timelineRole = "badge";
+      }
+      if (reportIndex !== -1) {
+        const rawDim = (cells[reportIndex] || "").trim();
+        const dim = parseInt(rawDim, 10);
+        if (!isNaN(dim) && dim > 0) {
+          reportDimensions.push({ order: dim, id });
+        }
+      }
+      const rawAliases = aliasesIndex !== -1 ? (cells[aliasesIndex] || "").trim() : "";
+      const aliases = rawAliases ? rawAliases.split(",").map((a) => a.trim()).filter((a) => a.length > 0) : [];
+      let widget = "text";
+      if (type === "enum")
+        widget = "dropdown";
+      else if (multiple)
+        widget = "tags";
+      else if (id.includes("note"))
+        widget = "note-link";
+      fields.push({
+        id,
+        label: fieldName,
+        type,
+        required,
+        multiple,
+        options,
+        defaultValue,
+        aliases: aliases.length > 0 ? aliases : void 0,
+        ui: {
+          widget,
+          timelineRole
+        }
+      });
+    }
+    reportDimensions.sort((a, b) => a.order - b.order);
+    const defaultReportGrouping = reportDimensions.length > 0 ? reportDimensions.map((r) => r.id) : fields.slice(0, 3).map((f) => f.id);
+    return {
+      version: 1,
+      fields,
+      defaultReportGrouping
+    };
+  }
+  /**
+   * Generate markdown content for a TrackingSchemaConfig
+   */
+  generateSchemaMarkdown(config) {
+    var _a;
+    const rows = [];
+    for (const f of config.fields) {
+      const fieldName = f.label;
+      const type = f.type;
+      const required = f.required ? "Yes" : "No";
+      const options = f.options ? f.options.map((o) => o.label).join(", ") : "";
+      const multiple = f.multiple ? "Yes" : "No";
+      const role = ((_a = f.ui) == null ? void 0 : _a.timelineRole) ? f.ui.timelineRole.charAt(0).toUpperCase() + f.ui.timelineRole.slice(1) : "Badge";
+      const dimIndex = config.defaultReportGrouping.indexOf(f.id);
+      const reportDim = dimIndex !== -1 ? String(dimIndex + 1) : "";
+      const aliases = f.aliases ? f.aliases.join(", ") : "";
+      rows.push(`| ${fieldName} | ${type} | ${required} | ${options} | ${multiple} | ${role} | ${reportDim} | ${aliases} |`);
+    }
+    return `# Activity Tracking Schema
+
+Edit the table below to customize your activity fields.
+Changes are saved and applied automatically.
+
+| Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+${rows.join("\n")}
+
+> [!TIP]
+> - **Type**: \`enum\` or \`string\`.
+> - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
+> - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), or \`Hidden\`.
+> - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
+> - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
+`;
+  }
+  /**
+   * Get the active schema config
+   */
+  getSchema() {
+    return this.schema;
+  }
+  /**
+   * Check if the schema has been loaded
+   */
+  hasLoaded() {
+    return this.isLoaded;
+  }
+  /**
+   * Get all configured fields in defined order
+   */
+  getFields() {
+    return this.schema.fields;
+  }
+  /**
+   * Lookup a field by its unique ID
+   */
+  getField(fieldId) {
+    return this.schema.fields.find((f) => f.id === fieldId);
+  }
+  /**
+   * Match a table column header to a field definition.
+   * Checks field ID, label, and any aliases (case-insensitive).
+   */
+  getFieldByHeader(headerName) {
+    const normalized = headerName.trim().toLowerCase();
+    return this.schema.fields.find((f) => {
+      if (f.id.toLowerCase() === normalized)
+        return true;
+      if (f.label.toLowerCase() === normalized)
+        return true;
+      if (f.aliases && f.aliases.some((alias) => alias.toLowerCase() === normalized))
+        return true;
+      return false;
+    });
+  }
+  /**
+   * Get the field designated for card color coding
+   */
+  getColorField() {
+    const explicit = this.schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+    });
+    if (explicit)
+      return explicit;
+    const firstEnum = this.schema.fields.find((f) => f.type === "enum");
+    if (firstEnum)
+      return firstEnum;
+    return this.schema.fields[0];
+  }
+  /**
+   * Get the field designated for card title display
+   */
+  getTitleField() {
+    const explicit = this.schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "title";
+    });
+    if (explicit)
+      return explicit;
+    const firstString = this.schema.fields.find((f) => f.type === "string");
+    if (firstString)
+      return firstString;
+    return this.schema.fields[0];
+  }
+  /**
+   * Get all fields designated as badges on timeline cards
+   */
+  getBadgeFields() {
+    return this.schema.fields.filter((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "badge";
+    });
+  }
+};
+
 // src/views/TimelineView.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/modals/EntryModal.ts
 var import_obsidian4 = require("obsidian");
+
+// src/components/TimePickerPopup.ts
+var TimePickerPopup = class {
+  constructor(anchor, columns, label, onClose) {
+    this.anchor = anchor;
+    this.columns = columns;
+    this.onClose = onClose;
+    this.lists = [];
+    this.cleanup = [];
+    var _a, _b;
+    const doc = anchor.ownerDocument;
+    this.element = doc.createElement("div");
+    this.element.className = "time-picker-popup";
+    this.element.id = anchor.getAttribute("aria-controls");
+    this.element.setAttribute("role", "dialog");
+    this.element.setAttribute("aria-label", `Choose ${label.toLowerCase()} time`);
+    anchor.parentElement.appendChild(this.element);
+    const choices = doc.createElement("div");
+    choices.className = "time-picker-columns";
+    this.element.appendChild(choices);
+    columns.forEach((column, columnIndex) => {
+      const section = doc.createElement("div");
+      section.className = "time-picker-column";
+      const heading2 = doc.createElement("div");
+      heading2.className = "time-picker-column-heading";
+      heading2.textContent = column.label;
+      section.appendChild(heading2);
+      const list4 = doc.createElement("div");
+      list4.className = "time-picker-options";
+      list4.setAttribute("role", "listbox");
+      list4.setAttribute("aria-label", column.label);
+      section.appendChild(list4);
+      choices.appendChild(section);
+      this.lists.push(list4);
+      column.values.forEach((value, index2) => {
+        const option = doc.createElement("button");
+        option.type = "button";
+        option.textContent = value;
+        option.dataset.value = value;
+        option.setAttribute("role", "option");
+        option.addEventListener("click", () => {
+          column.setValue(value);
+          this.sync();
+        });
+        option.addEventListener("keydown", (event) => {
+          var _a2;
+          let nextIndex;
+          switch (event.key) {
+            case "ArrowUp":
+              nextIndex = (index2 + column.values.length - 1) % column.values.length;
+              break;
+            case "ArrowDown":
+              nextIndex = (index2 + 1) % column.values.length;
+              break;
+            case "Home":
+              nextIndex = 0;
+              break;
+            case "End":
+              nextIndex = column.values.length - 1;
+              break;
+            case "ArrowLeft":
+            case "ArrowRight": {
+              event.preventDefault();
+              const nextColumn = (columnIndex + (event.key === "ArrowRight" ? 1 : -1) + columns.length) % columns.length;
+              (_a2 = this.lists[nextColumn].querySelector('[tabindex="0"]')) == null ? void 0 : _a2.focus();
+              return;
+            }
+            case "Enter":
+              event.preventDefault();
+              event.stopPropagation();
+              option.click();
+              this.close(true);
+              return;
+            default:
+              return;
+          }
+          event.preventDefault();
+          const next = list4.children[nextIndex];
+          next.click();
+          next.focus();
+        });
+        list4.appendChild(option);
+      });
+    });
+    const done = doc.createElement("button");
+    done.type = "button";
+    done.className = "time-picker-done";
+    done.textContent = "Done";
+    done.addEventListener("click", () => this.close(true));
+    this.element.appendChild(done);
+    if (typeof this.element.showPopover === "function") {
+      this.element.setAttribute("popover", "manual");
+      this.element.showPopover();
+      const rect = anchor.getBoundingClientRect();
+      const width = this.element.offsetWidth;
+      const height = this.element.offsetHeight;
+      const viewport = doc.documentElement;
+      const left = Math.max(8, Math.min(rect.right - width, viewport.clientWidth - width - 8));
+      const top = rect.bottom + height + 8 <= viewport.clientHeight ? rect.bottom + 4 : Math.max(8, rect.top - height - 4);
+      this.element.style.setProperty("--time-picker-left", `${left}px`);
+      this.element.style.setProperty("--time-picker-top", `${top}px`);
+    } else {
+      this.element.classList.add("time-picker-popup-fallback");
+    }
+    this.sync();
+    (_a = this.lists[0].querySelector('[tabindex="0"]')) == null ? void 0 : _a.focus();
+    const dismissOutside = (event) => {
+      if (!event.composedPath().includes(anchor.parentElement))
+        this.close();
+    };
+    const escape = (event) => {
+      if (event.key !== "Escape")
+        return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.close(true);
+    };
+    const dismissOnScroll = (event) => {
+      if (!event.composedPath().includes(this.element))
+        this.close();
+    };
+    const dismissOnResize = () => this.close();
+    doc.addEventListener("pointerdown", dismissOutside, true);
+    doc.addEventListener("focusin", dismissOutside);
+    doc.addEventListener("keydown", escape, true);
+    doc.addEventListener("scroll", dismissOnScroll, true);
+    (_b = doc.defaultView) == null ? void 0 : _b.addEventListener("resize", dismissOnResize);
+    this.cleanup.push(() => {
+      var _a2;
+      doc.removeEventListener("pointerdown", dismissOutside, true);
+      doc.removeEventListener("focusin", dismissOutside);
+      doc.removeEventListener("keydown", escape, true);
+      doc.removeEventListener("scroll", dismissOnScroll, true);
+      (_a2 = doc.defaultView) == null ? void 0 : _a2.removeEventListener("resize", dismissOnResize);
+    });
+  }
+  sync() {
+    this.columns.forEach((column, index2) => {
+      const list4 = this.lists[index2];
+      const value = column.getValue();
+      const hasSelection = column.values.includes(value);
+      Array.from(list4.children).forEach((child, optionIndex) => {
+        const option = child;
+        const selected = option.dataset.value === value;
+        option.setAttribute("aria-selected", String(selected));
+        option.tabIndex = selected || !hasSelection && optionIndex === 0 ? 0 : -1;
+        if (selected)
+          list4.scrollTop = option.offsetTop - (list4.clientHeight - option.offsetHeight) / 2;
+      });
+    });
+  }
+  close(returnFocus = false) {
+    for (const cleanup of this.cleanup)
+      cleanup();
+    this.cleanup.length = 0;
+    this.element.remove();
+    this.onClose();
+    if (returnFocus && this.anchor.isConnected)
+      this.anchor.focus();
+  }
+};
+
+// src/components/TimeInput.ts
+var _TimeInput = class {
+  constructor(container, use24HourFormat, label, value, onChange) {
+    this.use24HourFormat = use24HourFormat;
+    this.label = label;
+    this.onChange = onChange;
+    this.popup = null;
+    const doc = container.ownerDocument;
+    this.inputEl = doc.createElement("div");
+    this.inputEl.className = "time-picker";
+    this.inputEl.setAttribute("role", "group");
+    this.inputEl.setAttribute("aria-label", `${label} time`);
+    container.appendChild(this.inputEl);
+    this.hours = this.createSegment(`${label} hours`, use24HourFormat ? 0 : 1, use24HourFormat ? 23 : 12);
+    const separator = doc.createElement("span");
+    separator.textContent = ":";
+    separator.setAttribute("aria-hidden", "true");
+    this.inputEl.appendChild(separator);
+    this.minutes = this.createSegment(`${label} minutes`, 0, 59);
+    this.period = null;
+    if (!use24HourFormat) {
+      this.period = doc.createElement("select");
+      this.period.setAttribute("aria-label", `${label} AM or PM`);
+      for (const period of ["AM", "PM"]) {
+        const option = doc.createElement("option");
+        option.value = period;
+        option.textContent = period;
+        this.period.appendChild(option);
+      }
+      this.period.addEventListener("change", () => this.notifyChange());
+      this.inputEl.appendChild(this.period);
+    }
+    this.pickerButton = doc.createElement("button");
+    this.pickerButton.type = "button";
+    this.pickerButton.className = "time-picker-toggle";
+    this.pickerButton.setAttribute("aria-label", `Choose ${label.toLowerCase()} time`);
+    this.pickerButton.setAttribute("aria-haspopup", "dialog");
+    this.pickerButton.setAttribute("aria-expanded", "false");
+    this.pickerButton.setAttribute("aria-controls", `time-picker-popup-${_TimeInput.nextId++}`);
+    this.pickerButton.title = "Choose time";
+    const icon = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("aria-hidden", "true");
+    const face = doc.createElementNS("http://www.w3.org/2000/svg", "circle");
+    face.setAttribute("cx", "12");
+    face.setAttribute("cy", "12");
+    face.setAttribute("r", "9");
+    const hands = doc.createElementNS("http://www.w3.org/2000/svg", "path");
+    hands.setAttribute("d", "M12 6v6l4 2");
+    icon.append(face, hands);
+    this.pickerButton.appendChild(icon);
+    this.pickerButton.addEventListener("click", () => {
+      if (this.popup)
+        this.popup.close();
+      else
+        this.openPicker();
+    });
+    this.inputEl.appendChild(this.pickerButton);
+    this.inputEl.addEventListener("keydown", (event) => {
+      if (event.altKey && event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.openPicker();
+      }
+    }, true);
+    this.hours.addEventListener("keydown", (event) => {
+      if (event.key === ":") {
+        event.preventDefault();
+        this.minutes.focus();
+      }
+    });
+    this.setValue(value);
+  }
+  /** Empty means incomplete or invalid, so callers cannot save an old value by mistake. */
+  getValue() {
+    var _a;
+    const hours = this.readSegment(this.hours);
+    const minutes = this.readSegment(this.minutes);
+    if (hours === null || minutes === null)
+      return "";
+    const hour24 = this.use24HourFormat ? hours : hours % 12 + (((_a = this.period) == null ? void 0 : _a.value) === "PM" ? 12 : 0);
+    return `${String(hour24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+  /** Programmatic updates (duration edits and magnets) do not emit another change. */
+  setValue(value) {
+    var _a;
+    const match = /^(\d{2}):(\d{2})$/.exec(value);
+    const hours = match ? Number(match[1]) : NaN;
+    const minutes = match ? Number(match[2]) : NaN;
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      this.hours.value = String(this.use24HourFormat ? hours : hours % 12 || 12).padStart(2, "0");
+      this.minutes.value = String(minutes).padStart(2, "0");
+      if (this.period)
+        this.period.value = hours >= 12 ? "PM" : "AM";
+    } else {
+      this.hours.value = "";
+      this.minutes.value = "";
+    }
+    this.updateValidity();
+    (_a = this.popup) == null ? void 0 : _a.sync();
+  }
+  destroy() {
+    var _a;
+    (_a = this.popup) == null ? void 0 : _a.close();
+  }
+  openPicker() {
+    if (this.popup)
+      return;
+    const segmentColumn = (label, input, min, max) => ({
+      label,
+      values: Array.from({ length: max - min + 1 }, (_, i) => String(min + i).padStart(2, "0")),
+      getValue: () => {
+        const value = this.readSegment(input);
+        return value === null ? "" : String(value).padStart(2, "0");
+      },
+      setValue: (value) => {
+        input.value = value;
+        this.notifyChange();
+      }
+    });
+    const columns = [
+      segmentColumn("Hours", this.hours, this.use24HourFormat ? 0 : 1, this.use24HourFormat ? 23 : 12),
+      segmentColumn("Minutes", this.minutes, 0, 59)
+    ];
+    if (this.period) {
+      const period = this.period;
+      columns.push({
+        label: "AM/PM",
+        values: ["AM", "PM"],
+        getValue: () => period.value,
+        setValue: (value) => {
+          period.value = value;
+          this.notifyChange();
+        }
+      });
+    }
+    this.pickerButton.setAttribute("aria-expanded", "true");
+    this.popup = new TimePickerPopup(this.pickerButton, columns, this.label, () => {
+      this.popup = null;
+      this.pickerButton.setAttribute("aria-expanded", "false");
+    });
+  }
+  createSegment(label, min, max) {
+    const input = this.inputEl.ownerDocument.createElement("input");
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.autocomplete = "off";
+    input.placeholder = "--";
+    input.maxLength = 2;
+    input.setAttribute("role", "spinbutton");
+    input.setAttribute("aria-label", label);
+    input.setAttribute("aria-valuemin", String(min));
+    input.setAttribute("aria-valuemax", String(max));
+    input.title = `${label} (${min}\u2013${max}). Use up/down arrows to adjust.`;
+    input.addEventListener("focus", () => input.select());
+    input.addEventListener("input", () => this.notifyChange());
+    input.addEventListener("blur", () => {
+      const value = this.readSegment(input);
+      if (value !== null)
+        input.value = String(value).padStart(2, "0");
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+        return;
+      event.preventDefault();
+      const current = this.readSegment(input);
+      const next = current === null ? event.key === "ArrowUp" ? min : max : min + (current - min + (event.key === "ArrowUp" ? 1 : -1) + max - min + 1) % (max - min + 1);
+      input.value = String(next).padStart(2, "0");
+      input.select();
+      this.notifyChange();
+    });
+    this.inputEl.appendChild(input);
+    return input;
+  }
+  readSegment(input) {
+    if (!/^\d{1,2}$/.test(input.value))
+      return null;
+    const value = Number(input.value);
+    return value >= Number(input.getAttribute("aria-valuemin")) && value <= Number(input.getAttribute("aria-valuemax")) ? value : null;
+  }
+  updateValidity() {
+    for (const input of [this.hours, this.minutes]) {
+      const value = this.readSegment(input);
+      input.setAttribute("aria-invalid", String(value === null));
+      if (value === null)
+        input.removeAttribute("aria-valuenow");
+      else
+        input.setAttribute("aria-valuenow", String(value));
+    }
+  }
+  notifyChange() {
+    var _a;
+    this.updateValidity();
+    (_a = this.popup) == null ? void 0 : _a.sync();
+    this.onChange(this.getValue());
+  }
+};
+var TimeInput = _TimeInput;
+TimeInput.nextId = 0;
+
+// src/modals/EntryModal.ts
 var ConfirmModal = class extends import_obsidian4.Modal {
   constructor(app, message, onConfirm) {
     super(app);
@@ -11701,11 +12570,12 @@ var ConfirmModal = class extends import_obsidian4.Modal {
   }
 };
 var EntryModal = class extends import_obsidian4.Modal {
-  constructor(app, settings, dataManager, data, onSave) {
+  constructor(app, settings, dataManager, data, onSave, schemaManager) {
+    var _a, _b, _c;
     super(app);
-    // Dropdown references for cascading updates
-    this.projectDropdown = null;
-    this.activityDropdown = null;
+    // e.g., "1h 30m" or "90m"
+    // Dynamic field values
+    this.fieldValues = {};
     // Cleanup handlers
     this.cleanupHandlers = [];
     // Input references for updating
@@ -11733,17 +12603,32 @@ var EntryModal = class extends import_obsidian4.Modal {
     this.dataManager = dataManager;
     this.data = data;
     this.onSave = onSave;
+    this.schemaManager = schemaManager || ((_b = (_a = this.dataManager) == null ? void 0 : _a.getSchemaManager) == null ? void 0 : _b.call(_a));
+    this.schema = this.schemaManager ? this.schemaManager.getSchema() : ((_c = this.dataManager) == null ? void 0 : _c.getSchema) ? this.dataManager.getSchema() : DEFAULT_SCHEMA_CONFIG;
+    this.fieldValues = {};
     if (data.mode === "edit" && data.entry) {
       this.startDateValue = TableParser.getDateString(data.entry.startDateTime);
       this.startTimeValue = data.entry.start;
       this.endDateValue = TableParser.getDateString(data.entry.endDateTime);
       this.endTimeValue = data.entry.end;
       this.durationValue = this.formatDurationMinutes(data.entry.durationMinutes);
-      this.descriptionValue = data.entry.description;
-      this.clientValue = data.entry.client;
-      this.projectValue = this.resolveProjectName(data.entry.project);
-      this.activityValue = this.resolveActivityName(data.entry.activity);
-      this.linkedNoteValue = data.entry.linkedNote || "";
+      if (data.entry.fields) {
+        for (const [key, val] of Object.entries(data.entry.fields)) {
+          this.fieldValues[key] = val;
+        }
+      }
+      if (!this.fieldValues["activity_name"] && data.entry.description) {
+        this.fieldValues["activity_name"] = data.entry.description;
+      }
+      if (!this.fieldValues["category"] && data.entry.activity) {
+        this.fieldValues["category"] = data.entry.activity;
+      }
+      if (!this.fieldValues["project"] && data.entry.project) {
+        this.fieldValues["project"] = data.entry.project;
+      }
+      if (!this.fieldValues["notes"] && data.entry.linkedNote) {
+        this.fieldValues["notes"] = data.entry.linkedNote;
+      }
     } else {
       const date = data.date || new Date();
       this.startDateValue = TableParser.getDateString(date);
@@ -11764,13 +12649,51 @@ var EntryModal = class extends import_obsidian4.Modal {
         this.endTimeValue = this.addHourToTime(this.startTimeValue);
       }
       this.durationValue = this.calculateDurationFromDates();
-      this.descriptionValue = "";
-      const activeClients = this.settings.clients.filter((c) => !c.archived);
-      this.clientValue = activeClients.length > 0 ? activeClients[0].id : "";
-      this.projectValue = this.resolveProjectName(this.settings.defaultProject);
-      this.activityValue = this.resolveActivityName(this.settings.defaultActivity);
-      this.linkedNoteValue = "";
+      for (const field of this.schema.fields) {
+        if (field.defaultValue !== void 0 && field.defaultValue !== null) {
+          this.fieldValues[field.id] = field.defaultValue;
+        } else if (field.type === "enum" && !field.multiple && field.options && field.options.length > 0) {
+          if (field.required) {
+            this.fieldValues[field.id] = field.options[0].id;
+          } else {
+            this.fieldValues[field.id] = "";
+          }
+        } else if (field.multiple) {
+          this.fieldValues[field.id] = [];
+        } else {
+          this.fieldValues[field.id] = "";
+        }
+      }
     }
+  }
+  // Getters and setters for backwards compatibility
+  get descriptionValue() {
+    const val = this.fieldValues["activity_name"] || this.fieldValues["description"];
+    return typeof val === "string" ? val : Array.isArray(val) ? val.join(", ") : "";
+  }
+  set descriptionValue(v) {
+    this.fieldValues["activity_name"] = v;
+  }
+  get projectValue() {
+    const val = this.fieldValues["project"];
+    return typeof val === "string" ? val : "";
+  }
+  set projectValue(v) {
+    this.fieldValues["project"] = v;
+  }
+  get activityValue() {
+    const val = this.fieldValues["category"] || this.fieldValues["activity"];
+    return typeof val === "string" ? val : "";
+  }
+  set activityValue(v) {
+    this.fieldValues["category"] = v;
+  }
+  get linkedNoteValue() {
+    const val = this.fieldValues["notes"] || this.fieldValues["linkedNote"];
+    return typeof val === "string" ? val : "";
+  }
+  set linkedNoteValue(v) {
+    this.fieldValues["notes"] = v;
   }
   onOpen() {
     const { contentEl } = this;
@@ -11789,17 +12712,19 @@ var EntryModal = class extends import_obsidian4.Modal {
         void this.validateOverlap();
         void this.findAdjacentEntries();
       });
-    }).addText((text5) => {
-      this.startTimeInput = text5;
-      text5.setValue(this.startTimeValue);
-      text5.inputEl.type = "time";
-      text5.onChange((value) => {
+    });
+    this.startTimeInput = new TimeInput(
+      startSetting.controlEl,
+      this.settings.use24HourFormat,
+      "Start",
+      this.startTimeValue,
+      (value) => {
         this.startTimeValue = value;
         this.recalculateDuration();
         void this.validateOverlap();
         void this.findAdjacentEntries();
-      });
-    });
+      }
+    );
     this.startSnapHint = startSetting.controlEl.createEl("button", {
       cls: "time-magnet-btn",
       text: "\u{1F9F2}"
@@ -11831,17 +12756,19 @@ var EntryModal = class extends import_obsidian4.Modal {
         void this.validateOverlap();
         void this.findAdjacentEntries();
       });
-    }).addText((text5) => {
-      this.endTimeInput = text5;
-      text5.setValue(this.endTimeValue);
-      text5.inputEl.type = "time";
-      text5.onChange((value) => {
+    });
+    this.endTimeInput = new TimeInput(
+      endSetting.controlEl,
+      this.settings.use24HourFormat,
+      "End",
+      this.endTimeValue,
+      (value) => {
         this.endTimeValue = value;
         this.recalculateDuration();
         void this.validateOverlap();
         void this.findAdjacentEntries();
-      });
-    });
+      }
+    );
     this.endSnapHint = endSetting.controlEl.createEl("button", {
       cls: "time-magnet-btn",
       text: "\u{1F9F2}"
@@ -11853,86 +12780,9 @@ var EntryModal = class extends import_obsidian4.Modal {
     });
     this.warningBanner = contentEl.createDiv("overlap-warning-banner");
     this.warningBanner.addClass("is-hidden");
-    new import_obsidian4.Setting(contentEl).setName("Client").addDropdown((dropdown) => {
-      for (const client of this.settings.clients) {
-        if (!client.archived) {
-          dropdown.addOption(client.id, client.name);
-        }
-      }
-      dropdown.setValue(this.clientValue);
-      dropdown.onChange((value) => {
-        this.clientValue = value;
-        this.updateProjectDropdown();
-        this.updateActivityDropdown();
-      });
-    });
-    new import_obsidian4.Setting(contentEl).setName("Project").addDropdown((dropdown) => {
-      this.projectDropdown = dropdown;
-      this.populateProjectDropdown(dropdown);
-      dropdown.setValue(this.projectValue);
-      dropdown.onChange((value) => {
-        this.projectValue = value;
-      });
-    });
-    new import_obsidian4.Setting(contentEl).setName("Activity").addDropdown((dropdown) => {
-      this.activityDropdown = dropdown;
-      this.populateActivityDropdown(dropdown);
-      dropdown.setValue(this.activityValue);
-      dropdown.onChange((value) => {
-        this.activityValue = value;
-      });
-    });
-    const maxLen = this.settings.descriptionMaxLength;
-    const descSetting = new import_obsidian4.Setting(contentEl);
-    const descLabel = descSetting.nameEl;
-    descLabel.setText("Description ");
-    const counterEl = descLabel.createSpan("description-counter");
-    const updateCounter = (len) => {
-      if (maxLen > 0) {
-        counterEl.setText(`(${len}/${maxLen})`);
-        counterEl.toggleClass("is-over-limit", len > maxLen);
-        counterEl.toggleClass("is-near-limit", len > maxLen * 0.8 && len <= maxLen);
-      }
-    };
-    updateCounter(this.descriptionValue.length);
-    descSetting.addTextArea((text5) => {
-      text5.setValue(this.descriptionValue);
-      text5.setPlaceholder("What did you work on?");
-      text5.inputEl.rows = 3;
-      text5.onChange((value) => {
-        let cleaned = value;
-        if (maxLen > 0 && cleaned.length > maxLen) {
-          cleaned = cleaned.substring(0, maxLen);
-          text5.setValue(cleaned);
-        }
-        this.descriptionValue = cleaned;
-        updateCounter(cleaned.length);
-      });
-    });
-    const linkedNoteSetting = new import_obsidian4.Setting(contentEl).setName("Linked note");
-    let linkedNoteInput;
-    linkedNoteSetting.addText((text5) => {
-      linkedNoteInput = text5;
-      text5.setValue(this.linkedNoteValue);
-      text5.setPlaceholder("Enter note path");
-      text5.onChange((value) => {
-        this.linkedNoteValue = value;
-      });
-    });
-    linkedNoteSetting.addButton((btn) => {
-      btn.setButtonText("Browse").setTooltip("Select an existing note").onClick(() => {
-        new NoteSuggestModal(this.app, (file) => {
-          const path2 = file.path.replace(/\.md$/, "");
-          linkedNoteInput.setValue(path2);
-          this.linkedNoteValue = path2;
-        }).open();
-      });
-    });
-    linkedNoteSetting.addButton((btn) => {
-      btn.setButtonText("Create new").setTooltip("Create a new linked note").onClick(() => {
-        this.showCreateNoteInput(contentEl, linkedNoteInput);
-      });
-    });
+    for (const field of this.schema.fields) {
+      this.renderSchemaField(contentEl, field);
+    }
     const buttonRow = contentEl.createDiv("modal-button-row");
     if (this.data.mode === "edit") {
       const deleteBtn = buttonRow.createEl("button", {
@@ -11957,6 +12807,9 @@ var EntryModal = class extends import_obsidian4.Modal {
     void this.findAdjacentEntries();
   }
   onClose() {
+    var _a, _b;
+    (_a = this.startTimeInput) == null ? void 0 : _a.destroy();
+    (_b = this.endTimeInput) == null ? void 0 : _b.destroy();
     for (const handler of this.cleanupHandlers) {
       handler();
     }
@@ -11965,15 +12818,140 @@ var EntryModal = class extends import_obsidian4.Modal {
     contentEl.empty();
   }
   /**
+   * Render a dynamic form input according to field definition
+   */
+  renderSchemaField(container, field) {
+    var _a, _b;
+    const setting = new import_obsidian4.Setting(container);
+    const labelText = field.required ? `${field.label} *` : field.label;
+    setting.setName(labelText);
+    if (field.type === "enum") {
+      if (field.multiple) {
+        const currentVal = this.fieldValues[field.id];
+        const strVal = Array.isArray(currentVal) ? currentVal.join(", ") : currentVal || "";
+        setting.addText((text5) => {
+          var _a2, _b2;
+          text5.setValue(strVal);
+          text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || ((_b2 = field.options) == null ? void 0 : _b2.map((o) => o.label).join(", ")) || "Comma-separated");
+          text5.onChange((val) => {
+            this.fieldValues[field.id] = val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
+          });
+        });
+      } else {
+        setting.addDropdown((dropdown) => {
+          if (!field.required) {
+            dropdown.addOption("", "(None)");
+          }
+          if (field.options) {
+            for (const opt of field.options) {
+              dropdown.addOption(opt.id, opt.label);
+            }
+          }
+          const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
+          dropdown.setValue(currentVal);
+          dropdown.onChange((val) => {
+            this.fieldValues[field.id] = val;
+          });
+        });
+      }
+    } else {
+      if (((_a = field.ui) == null ? void 0 : _a.widget) === "note-link" || field.id === "notes" || field.label.toLowerCase().includes("note")) {
+        let noteInput;
+        const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
+        setting.addText((text5) => {
+          noteInput = text5;
+          text5.setValue(currentVal);
+          text5.setPlaceholder("Enter note path");
+          text5.onChange((val) => {
+            this.fieldValues[field.id] = val;
+          });
+        });
+        setting.addButton((btn) => {
+          btn.setButtonText("Browse").setTooltip("Select an existing note").onClick(() => {
+            new NoteSuggestModal(this.app, (file) => {
+              const path2 = file.path.replace(/\.md$/, "");
+              noteInput.setValue(path2);
+              this.fieldValues[field.id] = path2;
+            }).open();
+          });
+        });
+        setting.addButton((btn) => {
+          btn.setButtonText("Create new").setTooltip("Create a new linked note").onClick(() => {
+            this.showCreateNoteInput(container, noteInput);
+          });
+        });
+      } else if (field.multiple) {
+        const currentVal = this.fieldValues[field.id];
+        const strVal = Array.isArray(currentVal) ? currentVal.join(", ") : currentVal || "";
+        setting.addText((text5) => {
+          var _a2;
+          text5.setValue(strVal);
+          text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || "tag1, tag2");
+          text5.onChange((val) => {
+            this.fieldValues[field.id] = val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
+          });
+        });
+      } else if (((_b = field.ui) == null ? void 0 : _b.widget) === "textarea" || field.id === "activity_name" || field.label.toLowerCase().includes("description")) {
+        const maxLen = this.settings.descriptionMaxLength;
+        const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
+        if (maxLen > 0) {
+          const counterEl = setting.nameEl.createSpan("description-counter");
+          const updateCounter = (len) => {
+            counterEl.setText(` (${len}/${maxLen})`);
+            counterEl.toggleClass("is-over-limit", len > maxLen);
+            counterEl.toggleClass("is-near-limit", len > maxLen * 0.8 && len <= maxLen);
+          };
+          updateCounter(currentVal.length);
+          setting.addTextArea((text5) => {
+            var _a2;
+            text5.setValue(currentVal);
+            text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || "What did you work on?");
+            text5.inputEl.rows = 3;
+            text5.onChange((val) => {
+              let cleaned = val;
+              if (maxLen > 0 && cleaned.length > maxLen) {
+                cleaned = cleaned.substring(0, maxLen);
+                text5.setValue(cleaned);
+              }
+              this.fieldValues[field.id] = cleaned;
+              updateCounter(cleaned.length);
+            });
+          });
+        } else {
+          setting.addTextArea((text5) => {
+            var _a2;
+            text5.setValue(currentVal);
+            text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || "What did you work on?");
+            text5.inputEl.rows = 3;
+            text5.onChange((val) => {
+              this.fieldValues[field.id] = val;
+            });
+          });
+        }
+      } else {
+        const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
+        setting.addText((text5) => {
+          var _a2;
+          text5.setValue(currentVal);
+          if ((_a2 = field.ui) == null ? void 0 : _a2.placeholder)
+            text5.setPlaceholder(field.ui.placeholder);
+          text5.onChange((val) => {
+            this.fieldValues[field.id] = val;
+          });
+        });
+      }
+    }
+  }
+  /**
    * Handle save button click
    */
   async handleSave() {
+    if (this.startTimeInput)
+      this.startTimeValue = this.startTimeInput.getValue();
+    if (this.endTimeInput)
+      this.endTimeValue = this.endTimeInput.getValue();
     if (!this.startDateValue || !this.startTimeValue || !this.endDateValue || !this.endTimeValue) {
       Logger.error("EntryModal: Missing required fields");
-      return;
-    }
-    if (!this.clientValue) {
-      new import_obsidian4.Notice("Please select a client");
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(this.startDateValue) || !/^\d{4}-\d{2}-\d{2}$/.test(this.endDateValue)) {
@@ -11982,9 +12960,27 @@ var EntryModal = class extends import_obsidian4.Modal {
     }
     const startDateTime = new Date(`${this.startDateValue}T${this.startTimeValue}`);
     const endDateTime = new Date(`${this.endDateValue}T${this.endTimeValue}`);
-    if (endDateTime <= startDateTime) {
+    if (!Number.isFinite(startDateTime.getTime()) || !Number.isFinite(endDateTime.getTime()) || endDateTime <= startDateTime) {
       new import_obsidian4.Notice("End time must be after start time");
       return;
+    }
+    for (const field of this.schema.fields) {
+      if (field.required) {
+        const val = this.fieldValues[field.id];
+        const isEmpty = val === void 0 || val === null || val === "" || Array.isArray(val) && val.length === 0;
+        if (isEmpty) {
+          if (field.id === "activity_name" && this.descriptionValue) {
+            this.fieldValues[field.id] = this.descriptionValue;
+            continue;
+          }
+          if (field.id === "category" && (this.activityValue || field.defaultValue)) {
+            this.fieldValues[field.id] = this.activityValue || field.defaultValue;
+            continue;
+          }
+          new import_obsidian4.Notice(`Please enter ${field.label}`);
+          return;
+        }
+      }
     }
     const startForStorage = `${this.startDateValue} ${this.startTimeValue}`;
     const endForStorage = `${this.endDateValue} ${this.endTimeValue}`;
@@ -11993,28 +12989,33 @@ var EntryModal = class extends import_obsidian4.Modal {
       start: startForStorage,
       end: endForStorage
     });
+    const fields = { ...this.fieldValues };
+    const description = typeof fields["activity_name"] === "string" ? fields["activity_name"] : fields["description"] ? String(fields["description"]) : "";
+    const project = typeof fields["project"] === "string" ? fields["project"] : void 0;
+    const activity = typeof fields["category"] === "string" ? fields["category"] : typeof fields["activity"] === "string" ? fields["activity"] : void 0;
+    const linkedNote = typeof fields["notes"] === "string" ? fields["notes"] : typeof fields["linkedNote"] === "string" ? fields["linkedNote"] : void 0;
     try {
       if (this.data.mode === "edit" && this.data.entry) {
         await this.dataManager.updateEntry(this.data.entry, {
           date: this.startDateValue,
           start: startForStorage,
           end: endForStorage,
-          description: this.descriptionValue,
-          client: this.clientValue,
-          project: this.projectValue || void 0,
-          activity: this.activityValue || void 0,
-          linkedNote: this.linkedNoteValue || void 0
+          description,
+          project,
+          activity,
+          linkedNote,
+          fields
         });
       } else {
         await this.dataManager.createEntry({
           date: this.startDateValue,
           start: startForStorage,
           end: endForStorage,
-          description: this.descriptionValue,
-          client: this.clientValue,
-          project: this.projectValue || void 0,
-          activity: this.activityValue || void 0,
-          linkedNote: this.linkedNoteValue || void 0
+          description,
+          project,
+          activity,
+          linkedNote,
+          fields
         });
       }
       this.onSave();
@@ -12072,36 +13073,6 @@ var EntryModal = class extends import_obsidian4.Modal {
     return `${newHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
   }
   /**
-   * Resolve a project ID or name to the actual project name
-   * Handles both old lowercase ID format and new name format
-   */
-  resolveProjectName(projectIdOrName) {
-    if (!projectIdOrName)
-      return "";
-    const byName = this.settings.projects.find((p) => p.name === projectIdOrName);
-    if (byName)
-      return byName.name;
-    const byId = this.settings.projects.find((p) => p.id === projectIdOrName);
-    if (byId)
-      return byId.name;
-    return projectIdOrName;
-  }
-  /**
-   * Resolve an activity ID or name to the actual activity name
-   * Handles both lowercase ID format and display name format
-   */
-  resolveActivityName(activityIdOrName) {
-    if (!activityIdOrName)
-      return "";
-    const byName = this.settings.activities.find((a) => a.name === activityIdOrName);
-    if (byName)
-      return byName.name;
-    const byId = this.settings.activities.find((a) => a.id === activityIdOrName);
-    if (byId)
-      return byId.name;
-    return activityIdOrName;
-  }
-  /**
    * Convert HH:mm time string to minutes since midnight
    */
   timeToMinutes(time) {
@@ -12135,15 +13106,18 @@ var EntryModal = class extends import_obsidian4.Modal {
   /**
    * Recalculate and update duration display when dates/times change
    */
-  recalculateDuration() {
+  recalculateDuration(updateDurationInput = true) {
     const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
     const end = new Date(`${this.endDateValue}T${this.endTimeValue}`);
     const diffMs = end.getTime() - start.getTime();
     const diffMins = Math.round(diffMs / 6e4);
-    this.hasInvalidDuration = diffMins <= 0;
-    this.durationValue = this.formatDurationMinutes(diffMins);
+    this.hasInvalidDuration = !Number.isFinite(diffMins) || diffMins <= 0;
+    if (updateDurationInput) {
+      this.durationValue = Number.isFinite(diffMins) ? this.formatDurationMinutes(diffMins) : "";
+    }
     if (this.durationInput) {
-      this.durationInput.setValue(this.durationValue);
+      if (updateDurationInput)
+        this.durationInput.setValue(this.durationValue);
       this.durationInput.inputEl.toggleClass("time-input-error", this.hasInvalidDuration);
     }
     this.updateSaveButtonState();
@@ -12156,6 +13130,8 @@ var EntryModal = class extends import_obsidian4.Modal {
     if (durationMins <= 0)
       return;
     const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
+    if (!Number.isFinite(start.getTime()))
+      return;
     const end = new Date(start.getTime() + durationMins * 6e4);
     this.endDateValue = TableParser.getDateString(end);
     this.endTimeValue = `${end.getHours().toString().padStart(2, "0")}:${end.getMinutes().toString().padStart(2, "0")}`;
@@ -12165,6 +13141,8 @@ var EntryModal = class extends import_obsidian4.Modal {
     if (this.endTimeInput !== null) {
       this.endTimeInput.setValue(this.endTimeValue);
     }
+    this.recalculateDuration(false);
+    void this.findAdjacentEntries();
   }
   /**
    * Parse duration string to minutes
@@ -12264,61 +13242,20 @@ var EntryModal = class extends import_obsidian4.Modal {
    * Loosely coupled - no properties that would need updating if entry changes
    */
   generateNoteTemplate(_noteName) {
+    const tags = this.fieldValues["tags"];
+    if (tags) {
+      const tagArr = Array.isArray(tags) ? tags : [tags];
+      const validTags = tagArr.map((t) => String(t).trim().replace(/^#/, "")).filter(Boolean);
+      if (validTags.length > 0) {
+        return `---
+tags:
+${validTags.map((t) => `  - ${t}`).join("\n")}
+---
+
+`;
+      }
+    }
     return "";
-  }
-  /**
-   * Populate project dropdown with projects for the selected client
-   */
-  populateProjectDropdown(dropdown) {
-    dropdown.selectEl.empty();
-    dropdown.addOption("", "No project");
-    for (const project of this.settings.projects) {
-      if (!project.archived && project.clientId === this.clientValue) {
-        dropdown.addOption(project.name, project.name);
-      }
-    }
-  }
-  /**
-   * Update project dropdown when client changes
-   */
-  updateProjectDropdown() {
-    if (this.projectDropdown === null)
-      return;
-    this.populateProjectDropdown(this.projectDropdown);
-    const currentProject = this.settings.projects.find(
-      (p) => p.name === this.projectValue && p.clientId === this.clientValue
-    );
-    if (!currentProject) {
-      this.projectValue = "";
-    }
-    this.projectDropdown.setValue(this.projectValue);
-  }
-  /**
-   * Populate activity dropdown with activities for the selected client
-   */
-  populateActivityDropdown(dropdown) {
-    dropdown.selectEl.empty();
-    dropdown.addOption("", "No activity");
-    for (const activity of this.settings.activities) {
-      if (activity.clientId === this.clientValue) {
-        dropdown.addOption(activity.name, activity.name);
-      }
-    }
-  }
-  /**
-   * Update activity dropdown when client changes
-   */
-  updateActivityDropdown() {
-    if (this.activityDropdown === null)
-      return;
-    this.populateActivityDropdown(this.activityDropdown);
-    const currentActivity = this.settings.activities.find(
-      (a) => a.name === this.activityValue && a.clientId === this.clientValue
-    );
-    if (!currentActivity) {
-      this.activityValue = "";
-    }
-    this.activityDropdown.setValue(this.activityValue);
   }
   /**
    * Validate overlap with existing entries and update UI
@@ -12370,6 +13307,7 @@ var EntryModal = class extends import_obsidian4.Modal {
     const hasEndOverlap = this.endOverlap !== null;
     const hasEncompassed = this.encompassedEntry !== null;
     const hasAnyConflict = hasStartOverlap || hasEndOverlap || hasEncompassed;
+    const durationWarning = !this.startTimeValue || !this.endTimeValue || !this.startDateValue || !this.endDateValue ? "Enter a valid start and end date/time" : "End time must be after start time";
     if ((_a = this.startDateInput) == null ? void 0 : _a.inputEl) {
       this.startDateInput.inputEl.toggleClass("time-input-error", hasStartOverlap);
     }
@@ -12409,7 +13347,7 @@ var EntryModal = class extends import_obsidian4.Modal {
         }
         if (this.hasInvalidDuration) {
           const msg = textContainer.createDiv("overlap-message");
-          msg.setText("End time must be after start time");
+          msg.setText(durationWarning);
         }
       } else if (this.hasInvalidDuration) {
         this.warningBanner.removeClass("is-hidden");
@@ -12418,7 +13356,7 @@ var EntryModal = class extends import_obsidian4.Modal {
         icon.setText("\u26A0\uFE0F");
         const textContainer = this.warningBanner.createDiv("overlap-warning-messages");
         const msg = textContainer.createDiv("overlap-message");
-        msg.setText("End time must be after start time");
+        msg.setText(durationWarning);
       } else {
         this.warningBanner.addClass("is-hidden");
       }
@@ -12430,33 +13368,28 @@ var EntryModal = class extends import_obsidian4.Modal {
    */
   updateSaveButtonState() {
     const hasAnyConflict = this.startOverlap !== null || this.endOverlap !== null || this.encompassedEntry !== null;
-    const cannotSave = hasAnyConflict || this.hasInvalidDuration;
+    const hasInvalidTime = this.startTimeInput !== null && !this.startTimeInput.getValue() || this.endTimeInput !== null && !this.endTimeInput.getValue();
+    const cannotSave = hasAnyConflict || this.hasInvalidDuration || hasInvalidTime;
     if (this.saveButton) {
       this.saveButton.disabled = cannotSave;
       this.saveButton.toggleClass("is-disabled", cannotSave);
     }
   }
   /**
-   * Get client display name from client ID
-   */
-  getClientName(clientId) {
-    const client = this.settings.clients.find((c) => c.id === clientId);
-    return (client == null ? void 0 : client.name) || clientId;
-  }
-  /**
-   * Format entry label as CLIENT > PROJECT > ACTIVITY
+   * Format entry label as CATEGORY > ACTIVITY_NAME
    */
   formatEntryLabel(entry) {
+    var _a, _b;
     const parts = [];
-    const clientName = this.getClientName(entry.client);
-    parts.push(clientName);
-    if (entry.project) {
-      parts.push(entry.project);
+    const category = ((_a = entry.fields) == null ? void 0 : _a["category"]) || entry.activity;
+    if (category) {
+      parts.push(Array.isArray(category) ? category.join(", ") : String(category));
     }
-    if (entry.activity) {
-      parts.push(entry.activity);
+    const title = entry.description || ((_b = entry.fields) == null ? void 0 : _b["activity_name"]);
+    if (title && title !== category) {
+      parts.push(Array.isArray(title) ? title.join(", ") : String(title));
     }
-    return parts.join(" > ");
+    return parts.length > 0 ? parts.join(" > ") : "Activity";
   }
   /**
    * Check if two entries are same (helper for filtering)
@@ -12490,8 +13423,8 @@ var EntryModal = class extends import_obsidian4.Modal {
       if (this.previousEntry) {
         this.startSnapHint.removeClass("is-hidden");
         const prevEnd = this.previousEntry.end;
-        const prevClient = this.getClientName(this.previousEntry.client);
-        this.startSnapHint.setAttribute("aria-label", `Snap to ${prevEnd} (end of ${prevClient})`);
+        const prevLabel = this.formatEntryLabel(this.previousEntry);
+        this.startSnapHint.setAttribute("aria-label", `Snap to ${prevEnd} (end of ${prevLabel})`);
       } else {
         this.startSnapHint.addClass("is-hidden");
       }
@@ -12500,8 +13433,8 @@ var EntryModal = class extends import_obsidian4.Modal {
       if (this.nextEntry) {
         this.endSnapHint.removeClass("is-hidden");
         const nextStart = this.nextEntry.start;
-        const nextClient = this.getClientName(this.nextEntry.client);
-        this.endSnapHint.setAttribute("aria-label", `Snap to ${nextStart} (start of ${nextClient})`);
+        const nextLabel = this.formatEntryLabel(this.nextEntry);
+        this.endSnapHint.setAttribute("aria-label", `Snap to ${nextStart} (start of ${nextLabel})`);
       } else {
         this.endSnapHint.addClass("is-hidden");
       }
@@ -12561,8 +13494,151 @@ var NoteSuggestModal = class extends import_obsidian4.FuzzySuggestModal {
   }
 };
 
+// src/modals/DiaryModal.ts
+var import_obsidian5 = require("obsidian");
+var DiaryModal = class extends import_obsidian5.Modal {
+  constructor(app, dataManager, dateStr, onSave) {
+    super(app);
+    this.contentValue = "";
+    this.existingDiary = null;
+    this.textAreaComponent = null;
+    this.dataManager = dataManager;
+    this.dateStr = dateStr;
+    this.onSave = onSave;
+  }
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("time-tracker-diary-modal");
+    try {
+      this.existingDiary = await this.dataManager.getDiary(this.dateStr);
+      if (this.existingDiary) {
+        this.contentValue = this.existingDiary.content;
+      }
+    } catch (err) {
+      Logger.error("DiaryModal: Error loading diary for date:", this.dateStr, err);
+    }
+    contentEl.createEl("h2", { text: `Daily Diary - ${this.dateStr}` });
+    const hintEl = contentEl.createEl("p", {
+      text: "Free-text journal and reflection for this day. Saved to your monthly file under Daily Diaries.",
+      cls: "setting-item-description"
+    });
+    hintEl.style.marginBottom = "12px";
+    const setting = new import_obsidian5.Setting(contentEl);
+    setting.settingEl.style.border = "none";
+    setting.settingEl.style.padding = "0";
+    setting.infoEl.remove();
+    const counterEl = contentEl.createDiv({ cls: "diary-word-counter setting-item-description" });
+    counterEl.style.textAlign = "right";
+    counterEl.style.marginBottom = "8px";
+    const updateCounter = (text5) => {
+      const trimmed = text5.trim();
+      const words = trimmed ? trimmed.split(/\s+/).length : 0;
+      const chars = text5.length;
+      counterEl.setText(`${words} word${words === 1 ? "" : "s"} \xB7 ${chars} char${chars === 1 ? "" : "s"}`);
+    };
+    setting.addTextArea((text5) => {
+      this.textAreaComponent = text5;
+      text5.setValue(this.contentValue);
+      text5.setPlaceholder("How did your day go? What did you accomplish? Any reflections or takeaways?");
+      text5.inputEl.rows = 12;
+      text5.inputEl.style.width = "100%";
+      text5.inputEl.style.fontFamily = "var(--font-text)";
+      text5.inputEl.style.resize = "vertical";
+      text5.onChange((value) => {
+        this.contentValue = value;
+        updateCounter(value);
+      });
+      text5.inputEl.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          void this.handleSave();
+        }
+      });
+    });
+    updateCounter(this.contentValue);
+    const buttonRow = contentEl.createDiv("modal-button-row");
+    buttonRow.style.marginTop = "16px";
+    buttonRow.style.display = "flex";
+    buttonRow.style.alignItems = "center";
+    if (this.existingDiary) {
+      const deleteBtn = buttonRow.createEl("button", {
+        text: "Delete",
+        cls: "mod-warning"
+      });
+      deleteBtn.addEventListener("click", () => {
+        void this.handleDelete();
+      });
+    }
+    const spacer = buttonRow.createDiv("button-spacer");
+    spacer.style.flex = "1";
+    const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+    const saveBtn = buttonRow.createEl("button", {
+      text: "Save Diary",
+      cls: "mod-cta"
+    });
+    saveBtn.style.marginLeft = "8px";
+    saveBtn.addEventListener("click", () => {
+      void this.handleSave();
+    });
+    setTimeout(() => {
+      var _a;
+      (_a = this.textAreaComponent) == null ? void 0 : _a.inputEl.focus();
+    }, 50);
+  }
+  async handleSave() {
+    var _a, _b;
+    const trimmed = this.contentValue.trim();
+    if (!trimmed) {
+      if (this.existingDiary) {
+        await this.dataManager.deleteDiary(this.dateStr);
+      }
+      (_a = this.onSave) == null ? void 0 : _a.call(this);
+      this.close();
+      return;
+    }
+    try {
+      await this.dataManager.saveDiary({
+        date: this.dateStr,
+        content: trimmed
+      });
+      (_b = this.onSave) == null ? void 0 : _b.call(this);
+      this.close();
+    } catch (err) {
+      Logger.error("DiaryModal: Failed to save diary:", err);
+    }
+  }
+  async handleDelete() {
+    var _a;
+    try {
+      await this.dataManager.deleteDiary(this.dateStr);
+      (_a = this.onSave) == null ? void 0 : _a.call(this);
+      this.close();
+    } catch (err) {
+      Logger.error("DiaryModal: Failed to delete diary:", err);
+    }
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+};
+
+// src/utils/TimeFormat.ts
+function formatTimeRange(start, end, use24HourFormat) {
+  const format = (time) => {
+    if (use24HourFormat)
+      return time;
+    const [hours, minutes] = time.split(":");
+    const hour = Number(hours);
+    return `${hour % 12 || 12}:${minutes} ${hour < 12 ? "AM" : "PM"}`;
+  };
+  return `${format(start)} \u2013 ${format(end)}`;
+}
+
 // src/views/TimelineView.ts
-var TimelineView = class extends import_obsidian5.ItemView {
+var TimelineView = class extends import_obsidian6.ItemView {
   constructor(leaf, settings, dataManager) {
     super(leaf);
     // Scroll state
@@ -12571,6 +13647,8 @@ var TimelineView = class extends import_obsidian5.ItemView {
     // Days to render before/after visible area (prev day, today, next day)
     this.loadedMonths = /* @__PURE__ */ new Set();
     this.entriesByDate = /* @__PURE__ */ new Map();
+    this.diariesByDate = /* @__PURE__ */ new Map();
+    this.headerDiaryBtn = null;
     // Dimensions
     this.dayHeight = 0;
     // Calculated as 24 * hourHeight
@@ -12674,6 +13752,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
     const savedScrollTop = (_b = (_a = this.timelineContainer) == null ? void 0 : _a.scrollTop) != null ? _b : 0;
     this.loadedMonths.clear();
     this.entriesByDate.clear();
+    this.diariesByDate.clear();
     await this.loadVisibleRange();
     this.renderVisibleDays();
     if (this.timelineContainer) {
@@ -12743,19 +13822,19 @@ var TimelineView = class extends import_obsidian5.ItemView {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Previous day" }
     });
-    (0, import_obsidian5.setIcon)(prevBtn, "chevron-left");
+    (0, import_obsidian6.setIcon)(prevBtn, "chevron-left");
     prevBtn.addEventListener("click", () => this.navigateDays(-1));
     const nextBtn = controls.createEl("button", {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Next day" }
     });
-    (0, import_obsidian5.setIcon)(nextBtn, "chevron-right");
+    (0, import_obsidian6.setIcon)(nextBtn, "chevron-right");
     nextBtn.addEventListener("click", () => this.navigateDays(1));
     const jumpBtn = controls.createEl("button", {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Jump to date" }
     });
-    (0, import_obsidian5.setIcon)(jumpBtn, "calendar");
+    (0, import_obsidian6.setIcon)(jumpBtn, "calendar");
     const hiddenDatePicker = controls.createEl("input", {
       type: "date",
       cls: "timeline-date-picker-hidden"
@@ -12777,11 +13856,23 @@ var TimelineView = class extends import_obsidian5.ItemView {
         hiddenDatePicker.click();
       }
     });
+    this.headerDiaryBtn = controls.createEl("button", {
+      cls: "timeline-btn timeline-nav-btn",
+      attr: { "aria-label": "Open daily diary" }
+    });
+    (0, import_obsidian6.setIcon)(this.headerDiaryBtn, "book-open");
+    this.headerDiaryBtn.addEventListener("click", () => {
+      const visibleDate = this.getVisibleDate();
+      const dateStr = TableParser.getDateString(visibleDate);
+      new DiaryModal(this.app, this.dataManager, dateStr, () => {
+        void this.refresh();
+      }).open();
+    });
     const addBtn = controls.createEl("button", {
       cls: "timeline-btn timeline-btn-add",
       attr: { "aria-label": "Add new entry" }
     });
-    (0, import_obsidian5.setIcon)(addBtn, "plus");
+    (0, import_obsidian6.setIcon)(addBtn, "plus");
     addBtn.addEventListener("click", () => {
       const now = new Date();
       const startTime = `${now.getHours().toString().padStart(2, "0")}:${Math.floor(now.getMinutes() / 15) * 15}`.padEnd(5, "0").substring(0, 5);
@@ -12816,6 +13907,21 @@ var TimelineView = class extends import_obsidian5.ItemView {
     Logger.log("Shifted center by", days, "days, new center:", this.centerDate.toDateString());
   }
   /**
+   * Get the date currently visible / focal in the viewport
+   */
+  getVisibleDate() {
+    if (!this.timelineContainer || this.dayHeight === 0) {
+      return new Date(this.centerDate);
+    }
+    const scrollTop = this.timelineContainer.scrollTop;
+    const viewportHeight = this.timelineContainer.clientHeight;
+    const focalOffset = scrollTop + (viewportHeight > 0 ? viewportHeight / 2 : 0);
+    const dayIndex = Math.floor(focalOffset / this.dayHeight) - this.visibleDaysBuffer;
+    const visibleDate = new Date(this.centerDate);
+    visibleDate.setDate(visibleDate.getDate() + dayIndex);
+    return visibleDate;
+  }
+  /**
    * Update the visible date label based on scroll position
    */
   updateVisibleDateLabel() {
@@ -12839,6 +13945,16 @@ var TimelineView = class extends import_obsidian5.ItemView {
       const entries = sameDay ? (_a = this.entriesByDate.get(TableParser.getDateString(topDate))) != null ? _a : [] : [];
       const totalMinutes = entries.reduce((sum, entry) => sum + entry.durationMinutes, 0);
       this.visibleDateTotal.setText(totalMinutes > 0 ? `\xB7 ${this.formatDuration(totalMinutes)}` : "");
+    }
+    if (this.headerDiaryBtn) {
+      const visibleDate = this.getVisibleDate();
+      const dateStr = TableParser.getDateString(visibleDate);
+      const hasDiary = this.diariesByDate.has(dateStr);
+      this.headerDiaryBtn.setAttribute(
+        "aria-label",
+        hasDiary ? `Edit daily diary (${dateStr})` : `Write daily diary (${dateStr})`
+      );
+      this.headerDiaryBtn.toggleClass("has-diary", hasDiary);
     }
   }
   /**
@@ -12902,6 +14018,9 @@ var TimelineView = class extends import_obsidian5.ItemView {
           this.entriesByDate.set(dateStr, entries);
           Logger.log("loadVisibleRange: set", dateStr, "with", entries.length, "entries");
         }
+        for (const [dateStr, diary] of parsed.diariesByDate) {
+          this.diariesByDate.set(dateStr, diary);
+        }
       } else {
         Logger.log("loadVisibleRange: month already loaded", month);
       }
@@ -12935,6 +14054,18 @@ var TimelineView = class extends import_obsidian5.ItemView {
     dayHeader.style.top = `${topOffset}px`;
     const dateText = dayHeader.createSpan("day-header-date");
     dateText.setText(this.formatDayHeader(date));
+    const hasDiary = this.diariesByDate.has(dateStr);
+    const diaryBtn = dayHeader.createEl("button", {
+      cls: `day-header-diary-btn${hasDiary ? " has-diary" : ""}`,
+      attr: { "aria-label": hasDiary ? `Edit daily diary (${dateStr})` : `Write daily diary (${dateStr})` }
+    });
+    (0, import_obsidian6.setIcon)(diaryBtn, "book-open");
+    diaryBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      new DiaryModal(this.app, this.dataManager, dateStr, () => {
+        void this.refresh();
+      }).open();
+    });
     if (totalMinutes > 0) {
       const totalBadge = dayHeader.createSpan("day-header-total");
       totalBadge.setText(this.formatDuration(totalMinutes));
@@ -12969,6 +14100,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
    * Design spec: 200px/hr, responsive by duration (15m/30m/45m/60m+)
    */
   renderEntryCard(entry, dayTopOffset) {
+    var _a;
     const cardStartMinutes = entry.startDateTime.getHours() * 60 + entry.startDateTime.getMinutes();
     const totalDurationMinutes = entry.durationMinutes;
     const top = dayTopOffset + cardStartMinutes / 60 * this.settings.hourHeight;
@@ -12978,8 +14110,8 @@ var TimelineView = class extends import_obsidian5.ItemView {
     card.style.height = `${height}px`;
     card.dataset.entryDate = entry.date;
     card.dataset.entryLine = String(entry.lineNumber);
-    const clientColor = this.getClientColor(entry.client);
-    card.style.setProperty("--client-color", clientColor);
+    const cardColor = this.getEntryColor(entry);
+    card.style.setProperty("--card-color", cardColor);
     const is15m = totalDurationMinutes <= 15;
     if (is15m) {
       card.addClass("entry-15m");
@@ -12990,47 +14122,28 @@ var TimelineView = class extends import_obsidian5.ItemView {
     } else {
       card.addClass("entry-60m");
     }
-    const tooltipParts = [
-      entry.description || "(No description)",
-      `${entry.start} \u2013 ${entry.end} (${this.formatDuration(entry.durationMinutes)})`,
-      `Client: ${this.getClientName(entry.client)}`
-    ];
-    if (entry.project)
-      tooltipParts.push(`Project: ${this.getProjectName(entry.project)}`);
-    if (entry.activity)
-      tooltipParts.push(`Activity: ${this.getActivityName(entry.activity)}`);
-    if (entry.linkedNote)
-      tooltipParts.push(`Note: ${entry.linkedNote}`);
-    card.setAttribute("title", tooltipParts.join("\n"));
+    const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
+    card.setAttribute("title", this.getEntryTooltip(entry));
     const header = card.createDiv("entry-card-header");
     const timeText = header.createSpan("entry-time-text");
-    timeText.setText(`${entry.start} \u2013 ${entry.end}`);
+    timeText.setText(timeRange);
     const durationBadge = header.createSpan("entry-duration-badge");
     durationBadge.setText(this.formatDuration(entry.durationMinutes));
     if (is15m) {
       const tinyTags = header.createDiv("entry-tiny-tags");
-      const clientTag = tinyTags.createSpan("tiny-tag");
-      clientTag.setText(this.getClientName(entry.client).substring(0, 3).toUpperCase());
-      clientTag.style.setProperty("--tag-color", clientColor);
-      if (entry.project) {
-        const projectTag = tinyTags.createSpan("tiny-tag");
-        projectTag.setText(this.getProjectName(entry.project).substring(0, 3).toUpperCase());
-        projectTag.style.setProperty("--tag-color", this.getProjectColor(entry.project));
+      const badges = this.getEntryBadges(entry);
+      if (badges.length > 0) {
+        const tag = tinyTags.createSpan("tiny-tag");
+        tag.setText(badges[0].text.substring(0, 3).toUpperCase());
+        tag.style.setProperty("--tag-color", badges[0].color);
       }
-      if (entry.activity) {
-        const activityTag = tinyTags.createSpan("tiny-tag");
-        activityTag.setText(this.getActivityName(entry.activity).substring(0, 3).toUpperCase());
-        const actColor = this.getActivityColor(entry.activity);
-        if (actColor)
-          activityTag.style.setProperty("--tag-color", actColor);
-      }
-      const inlineDesc = header.createSpan("entry-inline-desc");
-      inlineDesc.setText(entry.description || "");
+      const inlineTitle = header.createSpan("entry-inline-desc");
+      inlineTitle.setText(this.getEntryTitle(entry));
     }
     const icons = header.createDiv("entry-header-icons");
     if (entry.linkedNote) {
       const noteIcon = icons.createSpan("entry-icon");
-      (0, import_obsidian5.setIcon)(noteIcon, "paperclip");
+      (0, import_obsidian6.setIcon)(noteIcon, "paperclip");
       noteIcon.setAttribute("title", `Open: ${entry.linkedNote}`);
       noteIcon.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -13038,14 +14151,14 @@ var TimelineView = class extends import_obsidian5.ItemView {
       });
     }
     const editIcon = icons.createSpan("entry-icon");
-    (0, import_obsidian5.setIcon)(editIcon, "pencil");
+    (0, import_obsidian6.setIcon)(editIcon, "pencil");
     editIcon.setAttribute("title", "Edit entry");
     editIcon.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openEditModal(entry);
     });
     const deleteIcon = icons.createSpan("entry-icon entry-icon-delete");
-    (0, import_obsidian5.setIcon)(deleteIcon, "trash-2");
+    (0, import_obsidian6.setIcon)(deleteIcon, "trash-2");
     deleteIcon.setAttribute("title", "Delete entry");
     deleteIcon.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -13053,27 +14166,38 @@ var TimelineView = class extends import_obsidian5.ItemView {
     });
     if (!is15m) {
       const body = card.createDiv("entry-card-body");
-      const desc = body.createDiv("entry-body-desc");
-      if (entry.description) {
-        desc.textContent = entry.description;
+      const titleEl = body.createDiv("entry-body-desc");
+      titleEl.textContent = this.getEntryTitle(entry);
+      const noteContent = this.getEntryNotesAndTags(entry);
+      if (noteContent) {
+        const notesEl = body.createDiv("entry-body-notes");
+        notesEl.textContent = noteContent;
       }
     }
     if (!is15m) {
       const footer = card.createDiv("entry-card-footer");
-      const clientSeg = footer.createSpan("powerline-seg");
-      clientSeg.setText(this.getClientName(entry.client));
-      clientSeg.style.setProperty("--seg-color", clientColor);
-      if (entry.project) {
-        const projectSeg = footer.createSpan("powerline-seg");
-        projectSeg.setText(this.getProjectName(entry.project));
-        projectSeg.style.setProperty("--seg-color", this.getProjectColor(entry.project));
+      const schema = this.dataManager.getSchema();
+      const colorField = schema.fields.find((f) => {
+        var _a2;
+        return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "color";
+      }) || schema.fields.find((f) => f.id === "category");
+      let colorValStr = "";
+      if (colorField && ((_a = entry.fields) == null ? void 0 : _a[colorField.id])) {
+        const v = entry.fields[colorField.id];
+        colorValStr = Array.isArray(v) ? v[0] || "" : v;
+      } else if (entry.activity) {
+        colorValStr = entry.activity;
       }
-      if (entry.activity) {
-        const activitySeg = footer.createSpan("powerline-seg");
-        activitySeg.setText(this.getActivityName(entry.activity));
-        const actColor = this.getActivityColor(entry.activity);
-        if (actColor)
-          activitySeg.style.setProperty("--seg-color", actColor);
+      if (colorValStr) {
+        const catSeg = footer.createSpan("powerline-seg");
+        catSeg.setText(colorValStr);
+        catSeg.style.setProperty("--seg-color", cardColor);
+      }
+      const badges = this.getEntryBadges(entry);
+      for (const badge of badges) {
+        const seg = footer.createSpan("powerline-seg");
+        seg.setText(badge.text);
+        seg.style.setProperty("--seg-color", badge.color);
       }
     }
     const resizeBottom = card.createDiv("entry-resize-handle entry-resize-bottom");
@@ -13212,7 +14336,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
       await this.refresh();
     } catch (err) {
       Logger.error("Failed to update entry after drag:", err);
-      new import_obsidian5.Notice("Failed to move entry. It may overlap with another entry.");
+      new import_obsidian6.Notice("Failed to move entry. It may overlap with another entry.");
       card.style.top = `${this.entryDragOriginalTop}px`;
       card.style.height = `${this.entryDragOriginalHeight}px`;
     }
@@ -13252,7 +14376,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
     const endMins = Math.round(endMinutesInDay % 60 / 15) * 15;
     const startTime = `${startHours.toString().padStart(2, "0")}:${startMins.toString().padStart(2, "0")}`;
     const endTime = `${endHours.toString().padStart(2, "0")}:${endMins.toString().padStart(2, "0")}`;
-    this.entryDragTooltipEl.setText(`${startTime} \u2013 ${endTime}`);
+    this.entryDragTooltipEl.setText(formatTimeRange(startTime, endTime, this.settings.use24HourFormat));
     this.entryDragTooltipEl.style.top = `${newTop + newHeight + 8}px`;
   }
   /**
@@ -13330,46 +14454,158 @@ var TimelineView = class extends import_obsidian5.ItemView {
     const day = date.getDate().toString().padStart(2, "0");
     return `${year}-${month}-${day}`;
   }
-  getProjectColor(projectId) {
-    if (!projectId)
+  /**
+   * Get primary color for an entry based on schema field with timelineRole === 'color' (or Category)
+   */
+  getEntryColor(entry) {
+    var _a;
+    const schema = this.dataManager.getSchema();
+    const colorField = schema.fields.find((f) => {
+      var _a2;
+      return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "color";
+    }) || schema.fields.find((f) => f.id === "category");
+    let rawVal = "";
+    if (colorField && ((_a = entry.fields) == null ? void 0 : _a[colorField.id])) {
+      const v = entry.fields[colorField.id];
+      rawVal = Array.isArray(v) ? v[0] || "" : v;
+    } else if (entry.activity) {
+      rawVal = entry.activity;
+    }
+    if (!rawVal)
       return "#4f46e5";
-    const project = this.settings.projects.find((p) => p.id === projectId || p.name === projectId);
-    return (project == null ? void 0 : project.color) || "#4f46e5";
+    if (colorField == null ? void 0 : colorField.options) {
+      const opt = colorField.options.find(
+        (o) => o.id.toLowerCase() === rawVal.toLowerCase() || o.label.toLowerCase() === rawVal.toLowerCase()
+      );
+      if (opt == null ? void 0 : opt.color)
+        return opt.color;
+    }
+    return getColorForValue(rawVal);
   }
   /**
-   * Get color for an activity from settings
+   * Get title for an entry card based on schema field with timelineRole === 'title' (or Activity Name)
    */
-  getActivityColor(activityName) {
-    const activity = this.settings.activities.find((a) => a.name === activityName || a.id === activityName);
-    return activity == null ? void 0 : activity.color;
+  getEntryTitle(entry) {
+    var _a, _b;
+    const schema = this.dataManager.getSchema();
+    const titleField = schema.fields.find((f) => {
+      var _a2;
+      return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "title";
+    }) || schema.fields.find((f) => f.id === "activity_name");
+    if (titleField && ((_a = entry.fields) == null ? void 0 : _a[titleField.id])) {
+      const val = entry.fields[titleField.id];
+      const strVal = Array.isArray(val) ? val.join(", ") : val;
+      if (strVal.trim())
+        return strVal;
+    }
+    if ((_b = entry.description) == null ? void 0 : _b.trim()) {
+      return entry.description;
+    }
+    return "(Untitled)";
   }
   /**
-   * Get display name for a client from settings
+   * Get badges for an entry card based on schema fields with timelineRole === 'badge'
+   * Excludes tags, which are displayed inside the note section
    */
-  getClientName(clientId) {
-    const client = this.settings.clients.find((c) => c.id === clientId || c.name === clientId);
-    return (client == null ? void 0 : client.name) || clientId;
+  getEntryBadges(entry) {
+    var _a;
+    const schema = this.dataManager.getSchema();
+    const badgeFields = schema.fields.filter(
+      (f) => {
+        var _a2;
+        return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "badge" && f.id !== "tags" && f.label.toLowerCase() !== "tags";
+      }
+    );
+    const badges = [];
+    for (const field of badgeFields) {
+      const val = (_a = entry.fields) == null ? void 0 : _a[field.id];
+      if (!val)
+        continue;
+      const values = Array.isArray(val) ? val : [val];
+      for (const item of values) {
+        const itemStr = String(item).trim();
+        if (!itemStr)
+          continue;
+        let color2 = "";
+        if (field.options) {
+          const opt = field.options.find(
+            (o) => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
+          );
+          if (opt == null ? void 0 : opt.color)
+            color2 = opt.color;
+        }
+        if (!color2) {
+          color2 = getColorForValue(itemStr);
+        }
+        badges.push({
+          label: field.label,
+          text: itemStr,
+          color: color2
+        });
+      }
+    }
+    if (badges.length === 0) {
+      if (entry.project) {
+        badges.push({ label: "Project", text: entry.project, color: getColorForValue(entry.project) });
+      }
+      if (entry.activity) {
+        badges.push({ label: "Activity", text: entry.activity, color: getColorForValue(entry.activity) });
+      }
+    }
+    return badges;
   }
   /**
-   * Get color for a client from settings
+   * Get notes and tags formatted for display inside the note section of the card
    */
-  getClientColor(clientId) {
-    const client = this.settings.clients.find((c) => c.id === clientId || c.name === clientId);
-    return (client == null ? void 0 : client.color) || "#4f46e5";
+  getEntryNotesAndTags(entry) {
+    var _a, _b, _c;
+    const schema = this.dataManager.getSchema();
+    const parts = [];
+    const notesField = schema.fields.find((f) => f.id === "notes" || f.label.toLowerCase() === "notes");
+    const notesVal = notesField ? (_a = entry.fields) == null ? void 0 : _a[notesField.id] : void 0;
+    if (notesVal && typeof notesVal === "string" && notesVal.trim()) {
+      parts.push(notesVal.trim());
+    } else if ((_b = entry.linkedNote) == null ? void 0 : _b.trim()) {
+      parts.push(entry.linkedNote.trim());
+    }
+    const tagsField = schema.fields.find((f) => f.id === "tags" || f.label.toLowerCase() === "tags");
+    const tagsVal = tagsField ? (_c = entry.fields) == null ? void 0 : _c[tagsField.id] : void 0;
+    if (tagsVal) {
+      const tagArr = Array.isArray(tagsVal) ? tagsVal : [tagsVal];
+      const formatted = tagArr.map((t) => String(t).trim()).filter(Boolean).map((t) => t.startsWith("#") ? t : `#${t}`);
+      if (formatted.length > 0) {
+        parts.push(formatted.join(" "));
+      }
+    }
+    return parts.join(" \xB7 ");
   }
   /**
-   * Get display name for a project from settings
+   * Build rich hover tooltip with title, time range, and all populated schema attributes
    */
-  getProjectName(projectId) {
-    const project = this.settings.projects.find((p) => p.id === projectId || p.name === projectId);
-    return (project == null ? void 0 : project.name) || projectId;
-  }
-  /**
-   * Get display name for an activity from settings
-   */
-  getActivityName(activityId) {
-    const activity = this.settings.activities.find((a) => a.id === activityId || a.name === activityId);
-    return (activity == null ? void 0 : activity.name) || activityId;
+  getEntryTooltip(entry) {
+    var _a, _b;
+    const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
+    const title = this.getEntryTitle(entry);
+    const parts = [
+      title,
+      `${timeRange} (${this.formatDuration(entry.durationMinutes)})`
+    ];
+    const schema = this.dataManager.getSchema();
+    for (const field of schema.fields) {
+      if (((_a = field.ui) == null ? void 0 : _a.timelineRole) === "title")
+        continue;
+      const val = (_b = entry.fields) == null ? void 0 : _b[field.id];
+      if (val !== void 0 && val !== null && val !== "") {
+        const displayVal = Array.isArray(val) ? val.join(", ") : String(val);
+        if (displayVal.trim()) {
+          parts.push(`${field.label}: ${displayVal}`);
+        }
+      }
+    }
+    if (entry.linkedNote) {
+      parts.push(`Note: ${entry.linkedNote}`);
+    }
+    return parts.join("\n");
   }
   /**
    * Open a linked note in Obsidian
@@ -13429,7 +14665,8 @@ var TimelineView = class extends import_obsidian5.ItemView {
    * Show confirmation dialog and delete entry if confirmed
    */
   confirmDeleteEntry(entry) {
-    new ConfirmDeleteModal(this.app, entry, () => {
+    const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
+    new ConfirmDeleteModal(this.app, entry, timeRange, () => {
       void this.dataManager.deleteEntry(entry).then(() => this.refresh());
     }).open();
   }
@@ -13668,7 +14905,7 @@ var TimelineView = class extends import_obsidian5.ItemView {
       const endHours = endYInDay / this.settings.hourHeight;
       const startTime = this.roundToTimeString(startHours);
       const endTime = this.roundToTimeString(endHours);
-      this.dragTooltipEl.setText(`${startTime} \u2013 ${endTime}`);
+      this.dragTooltipEl.setText(formatTimeRange(startTime, endTime, this.settings.use24HourFormat));
       this.dragTooltipEl.style.top = `${maxY + 8}px`;
     }
   }
@@ -13730,25 +14967,28 @@ var TimelineView = class extends import_obsidian5.ItemView {
     modal.open();
   }
 };
-var ConfirmDeleteModal = class extends import_obsidian5.Modal {
-  constructor(app, entry, onConfirm) {
+var ConfirmDeleteModal = class extends import_obsidian6.Modal {
+  constructor(app, entry, timeRange, onConfirm) {
     super(app);
+    this.timeRange = timeRange;
     this.entry = entry;
     this.onConfirm = onConfirm;
   }
   onOpen() {
+    var _a;
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("time-tracker-confirm-delete");
     contentEl.createEl("h2", { text: "Delete entry" });
     const details = contentEl.createDiv("delete-entry-details");
     details.createEl("p", {
-      text: `${this.entry.start} \u2013 ${this.entry.end}`,
+      text: this.timeRange,
       cls: "delete-entry-time"
     });
-    if (this.entry.description) {
+    const title = ((_a = this.entry.fields) == null ? void 0 : _a["activity_name"]) || this.entry.description;
+    if (title) {
       details.createEl("p", {
-        text: this.entry.description,
+        text: title,
         cls: "delete-entry-desc"
       });
     }
@@ -13775,344 +15015,293 @@ var ConfirmDeleteModal = class extends import_obsidian5.Modal {
 };
 
 // src/views/ReportsView.ts
-var import_obsidian8 = require("obsidian");
-
-// src/modals/InvoiceModal.ts
-var import_obsidian6 = require("obsidian");
-var InvoiceModal = class extends import_obsidian6.Modal {
-  constructor(app, data, onGenerate) {
-    super(app);
-    // Form values
-    this.invoiceNumber = "";
-    this.paymentTerms = "Net 30";
-    this.data = data;
-    this.onGenerate = onGenerate;
-    this.issueDate = new Date();
-    this.dueDate = this.calculateDueDate(this.issueDate, this.paymentTerms);
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("invoice-modal");
-    contentEl.createEl("h2", { text: "Generate invoice" });
-    const clientInfo = contentEl.createDiv("invoice-client-info");
-    clientInfo.createEl("strong", { text: this.data.client.name });
-    clientInfo.createSpan({
-      text: ` \u2022 ${this.formatDateRange(this.data.periodStart, this.data.periodEnd)}`,
-      cls: "invoice-period"
-    });
-    clientInfo.createSpan({
-      text: ` \u2022 ${this.formatCurrency(this.data.totalAmount, this.data.client.currency)}`,
-      cls: "invoice-amount"
-    });
-    new import_obsidian6.Setting(contentEl).setName("Invoice number").setDesc("Unique identifier for this invoice").addText((text5) => text5.setPlaceholder("Enter invoice number").setValue(this.invoiceNumber).onChange((value) => {
-      this.invoiceNumber = value;
-    }));
-    new import_obsidian6.Setting(contentEl).setName("Issue date").setDesc("Date the invoice is issued").addText((text5) => {
-      text5.inputEl.type = "date";
-      text5.setValue(this.formatDateForInput(this.issueDate));
-      text5.onChange((value) => {
-        const [year, month, day] = value.split("-").map(Number);
-        this.issueDate = new Date(year, month - 1, day);
-        this.updateDueDate();
-      });
-    });
-    new import_obsidian6.Setting(contentEl).setName("Payment terms").setDesc("When payment is due").addDropdown((dropdown) => dropdown.addOption("Due on receipt", "Due on receipt").addOption("Net 15", "Net 15").addOption("Net 30", "Net 30").addOption("Net 45", "Net 45").addOption("Net 60", "Net 60").setValue(this.paymentTerms).onChange((value) => {
-      this.paymentTerms = value;
-      this.updateDueDate();
-    }));
-    const dueDateSetting = new import_obsidian6.Setting(contentEl).setName("Due date").setDesc("Automatically calculated from issue date and terms");
-    this.dueDateDisplay = dueDateSetting.controlEl.createDiv("invoice-due-date");
-    this.dueDateDisplay.setText(this.formatDateDisplay(this.dueDate));
-    const buttonRow = contentEl.createDiv("modal-button-row");
-    const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
-    const generateBtn = buttonRow.createEl("button", {
-      text: "Generate invoice",
-      cls: "mod-cta"
-    });
-    generateBtn.addEventListener("click", () => this.handleGenerate());
-  }
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-  /**
-   * Update the due date based on issue date and terms
-   */
-  updateDueDate() {
-    this.dueDate = this.calculateDueDate(this.issueDate, this.paymentTerms);
-    if (this.dueDateDisplay) {
-      this.dueDateDisplay.setText(this.formatDateDisplay(this.dueDate));
-    }
-  }
-  /**
-   * Calculate due date from issue date and payment terms
-   */
-  calculateDueDate(issueDate, terms) {
-    const due = new Date(issueDate);
-    switch (terms) {
-      case "Due on receipt":
-        break;
-      case "Net 15":
-        due.setDate(due.getDate() + 15);
-        break;
-      case "Net 30":
-        due.setDate(due.getDate() + 30);
-        break;
-      case "Net 45":
-        due.setDate(due.getDate() + 45);
-        break;
-      case "Net 60":
-        due.setDate(due.getDate() + 60);
-        break;
-    }
-    return due;
-  }
-  /**
-   * Handle generate button click
-   */
-  handleGenerate() {
-    if (!this.invoiceNumber.trim()) {
-      new import_obsidian6.Notice("Invoice number is required");
-      return;
-    }
-    const result = {
-      invoiceNumber: this.invoiceNumber.trim(),
-      issueDate: this.issueDate,
-      paymentTerms: this.paymentTerms,
-      dueDate: this.dueDate
-    };
-    this.onGenerate(result);
-    this.close();
-  }
-  // Formatting helpers
-  formatDateForInput(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-  formatDateDisplay(date) {
-    return date.toLocaleDateString(void 0, {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    });
-  }
-  formatDateRange(start, end) {
-    const options = {
-      month: "short",
-      day: "numeric",
-      year: "numeric"
-    };
-    return `${start.toLocaleDateString(void 0, { month: "short", day: "numeric" })} - ${end.toLocaleDateString(void 0, options)}`;
-  }
-  formatCurrency(amount, currency) {
-    return new Intl.NumberFormat(void 0, {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(amount);
-  }
-};
-
-// src/invoice/InvoiceGenerator.ts
 var import_obsidian7 = require("obsidian");
-var InvoiceGenerator = class {
-  constructor(app, settings, dataManager) {
-    this.app = app;
-    this.settings = settings;
-    this.dataManager = dataManager;
+
+// src/data/ReportAggregator.ts
+function formatDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function getEntryFieldValue(entry, fieldId, schema) {
+  if (entry.fields && entry.fields[fieldId] !== void 0 && entry.fields[fieldId] !== null) {
+    const val = entry.fields[fieldId];
+    if (Array.isArray(val)) {
+      const items = val.filter((v) => typeof v === "string" && v.trim().length > 0);
+      return items.length > 0 ? items.join(", ") : "(None)";
+    }
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : "(None)";
+    }
   }
+  const fieldDef = schema.fields.find(
+    (f) => f.id.toLowerCase() === fieldId.toLowerCase() || f.label.toLowerCase() === fieldId.toLowerCase()
+  );
+  if (fieldDef) {
+    if (entry.fields && entry.fields[fieldDef.id] !== void 0 && entry.fields[fieldDef.id] !== null) {
+      const val = entry.fields[fieldDef.id];
+      if (Array.isArray(val)) {
+        const items = val.filter((v) => typeof v === "string" && v.trim().length > 0);
+        if (items.length > 0)
+          return items.join(", ");
+      } else if (typeof val === "string" && val.trim().length > 0) {
+        return val.trim();
+      }
+    }
+    if (fieldDef.aliases) {
+      for (const alias of fieldDef.aliases) {
+        if (entry.fields && entry.fields[alias] !== void 0 && entry.fields[alias] !== null) {
+          const val = entry.fields[alias];
+          if (Array.isArray(val)) {
+            const items = val.filter((v) => typeof v === "string" && v.trim().length > 0);
+            if (items.length > 0)
+              return items.join(", ");
+          } else if (typeof val === "string" && val.trim().length > 0) {
+            return val.trim();
+          }
+        }
+      }
+    }
+  }
+  if (entry.unmappedFields) {
+    if (entry.unmappedFields[fieldId] && entry.unmappedFields[fieldId].trim().length > 0) {
+      return entry.unmappedFields[fieldId].trim();
+    }
+    if (fieldDef == null ? void 0 : fieldDef.aliases) {
+      for (const alias of fieldDef.aliases) {
+        if (entry.unmappedFields[alias] && entry.unmappedFields[alias].trim().length > 0) {
+          return entry.unmappedFields[alias].trim();
+        }
+      }
+    }
+  }
+  const anyEntry = entry;
+  if (typeof anyEntry[fieldId] === "string" && anyEntry[fieldId].trim().length > 0) {
+    return anyEntry[fieldId].trim();
+  }
+  return "(None)";
+}
+function getNodeColor(dimensionId, value, schema) {
+  if (!value || value === "(None)" || value === "(Unspecified)") {
+    return "#888888";
+  }
+  const fieldDef = schema.fields.find(
+    (f) => f.id.toLowerCase() === dimensionId.toLowerCase() || f.label.toLowerCase() === dimensionId.toLowerCase()
+  );
+  if ((fieldDef == null ? void 0 : fieldDef.options) && fieldDef.options.length > 0) {
+    const matchingOption = fieldDef.options.find(
+      (opt) => opt.label.toLowerCase() === value.toLowerCase() || opt.id.toLowerCase() === value.toLowerCase()
+    );
+    if (matchingOption == null ? void 0 : matchingOption.color) {
+      return matchingOption.color;
+    }
+  }
+  return getColorForValue(value);
+}
+function defaultEffectiveDuration(entry, rangeStart, rangeEnd) {
+  const startMs = entry.startDateTime.getTime();
+  const endMs = entry.endDateTime.getTime();
+  const rStartMs = rangeStart.getTime();
+  const rEndMs = rangeEnd.getTime();
+  if (endMs <= rStartMs || startMs >= rEndMs) {
+    return 0;
+  }
+  const clampedStart = Math.max(startMs, rStartMs);
+  const clampedEnd = Math.min(endMs, rEndMs);
+  return Math.max(0, Math.round((clampedEnd - clampedStart) / (1e3 * 60)));
+}
+var ReportAggregator = class {
   /**
-   * Generate invoice data from filtered entries
+   * Compute multi-level aggregation tree and summary statistics
    */
-  generateInvoiceData(entries, client, modalResult, rangeStart, rangeEnd) {
-    var _a;
-    const projectHours = /* @__PURE__ */ new Map();
+  static calculateAggregation(options) {
+    const {
+      entries,
+      schema,
+      rangeStart,
+      rangeEnd,
+      getEffectiveDuration = defaultEffectiveDuration
+    } = options;
+    let activeDimensions = options.dimensions.map((d) => (d || "").trim()).filter((d) => d.length > 0);
+    if (activeDimensions.length === 0) {
+      activeDimensions = schema.defaultReportGrouping && schema.defaultReportGrouping.length > 0 ? [...schema.defaultReportGrouping] : schema.fields.length > 0 ? [schema.fields[0].id] : ["category"];
+    }
+    activeDimensions = activeDimensions.slice(0, 3);
+    const prepared = [];
+    let totalMinutes = 0;
+    const activeDays = /* @__PURE__ */ new Set();
     for (const entry of entries) {
-      if (entry.client !== client.id)
+      const minutes = getEffectiveDuration(entry, rangeStart, rangeEnd);
+      if (minutes <= 0)
         continue;
-      const effectiveMinutes = this.dataManager.getEffectiveDuration(entry, rangeStart, rangeEnd);
-      if (effectiveMinutes <= 0)
-        continue;
-      const projectName = entry.project || "(No Project)";
-      const current = projectHours.get(projectName) || 0;
-      projectHours.set(projectName, current + effectiveMinutes);
+      prepared.push({ entry, minutes });
+      totalMinutes += minutes;
+      const dateStr = entry.date || formatDateKey(entry.startDateTime);
+      if (dateStr) {
+        activeDays.add(dateStr);
+      }
     }
-    const lineItems = [];
-    for (const [projectName, minutes] of projectHours) {
-      const hours = minutes / 60;
-      const project = this.settings.projects.find(
-        (p) => (p.name === projectName || p.id === projectName) && p.clientId === client.id
-      );
-      const hourlyRate = (_a = project == null ? void 0 : project.rateOverride) != null ? _a : client.rate;
-      const amount = hours * hourlyRate;
-      const description = projectName;
-      lineItems.push({
-        description,
-        quantity: Math.round(hours * 100) / 100,
-        // Round to 2 decimals
-        unitPrice: hourlyRate,
-        currency: client.currency,
-        amount: Math.round(amount * 100) / 100
-      });
-    }
-    lineItems.sort((a, b) => b.amount - a.amount);
-    const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
-    const total = subtotal;
+    const buildLevel = (subset, dimIndex, parentPath, parentMinutes) => {
+      if (dimIndex >= activeDimensions.length || subset.length === 0) {
+        return [];
+      }
+      const currentDimId = activeDimensions[dimIndex];
+      const groups = /* @__PURE__ */ new Map();
+      for (const item of subset) {
+        const val = getEntryFieldValue(item.entry, currentDimId, schema);
+        let grp = groups.get(val);
+        if (!grp) {
+          grp = { entries: [], minutes: 0 };
+          groups.set(val, grp);
+        }
+        grp.entries.push(item);
+        grp.minutes += item.minutes;
+      }
+      const nodes = [];
+      for (const [val, grp] of groups.entries()) {
+        const key = parentPath ? `${parentPath} > ${currentDimId}:${val}` : `${currentDimId}:${val}`;
+        const color2 = getNodeColor(currentDimId, val, schema);
+        const percentageOfParent = parentMinutes > 0 ? grp.minutes / parentMinutes * 100 : 0;
+        const percentageOfTotal = totalMinutes > 0 ? grp.minutes / totalMinutes * 100 : 0;
+        const children = buildLevel(grp.entries, dimIndex + 1, key, grp.minutes);
+        nodes.push({
+          key,
+          label: val,
+          dimensionId: currentDimId,
+          color: color2,
+          totalMinutes: grp.minutes,
+          percentageOfParent,
+          percentageOfTotal,
+          depth: dimIndex,
+          children
+        });
+      }
+      nodes.sort((a, b) => b.totalMinutes - a.totalMinutes);
+      return nodes;
+    };
+    const tree = buildLevel(prepared, 0, "", totalMinutes);
+    const activeDaysCount = activeDays.size;
+    const dailyAverageMinutes = activeDaysCount > 0 ? Math.round(totalMinutes / activeDaysCount) : 0;
+    const topFocusLabel = tree.length > 0 ? tree[0].label : "(None)";
+    const topFocusMinutes = tree.length > 0 ? tree[0].totalMinutes : 0;
+    const stats = {
+      totalMinutes,
+      dailyAverageMinutes,
+      activeDaysCount,
+      topFocusLabel,
+      topFocusMinutes
+    };
     return {
-      invoiceNumber: modalResult.invoiceNumber,
-      issueDate: modalResult.issueDate,
-      dueDate: modalResult.dueDate,
-      billFrom: this.settings.billFrom,
-      billTo: {
-        name: client.name,
-        address: client.address || ""
-      },
-      lineItems,
-      currency: client.currency,
-      subtotal: Math.round(subtotal * 100) / 100,
-      total: Math.round(total * 100) / 100
+      tree,
+      stats,
+      activeDimensions
     };
   }
   /**
-   * Generate markdown content from invoice data
+   * Compute time spent on each category and sub-activities for the time range
    */
-  generateMarkdown(invoice) {
-    const lines = [];
-    lines.push(`# ${invoice.invoiceNumber}`);
-    lines.push("");
-    lines.push(`Issue date: ${this.formatDate(invoice.issueDate)}`);
-    lines.push(`Due date: ${this.formatDate(invoice.dueDate)}`);
-    lines.push("");
-    const billFromAddress = invoice.billFrom.address.split("\n").filter((l) => l.trim());
-    const billToAddress = invoice.billTo.address.split("\n").filter((l) => l.trim());
-    lines.push('<div style="display: flex; justify-content: space-between; margin: 20px 0;">');
-    lines.push('<div style="flex: 1;">');
-    lines.push("<small>Bill from</small><br>");
-    lines.push(`<strong>${this.escapeHtml(invoice.billFrom.name)}</strong><br>`);
-    for (const line of billFromAddress) {
-      lines.push(`${this.escapeHtml(line)}<br>`);
-    }
-    lines.push("</div>");
-    lines.push('<div style="flex: 1; text-align: right;">');
-    lines.push("<small>Bill to</small><br>");
-    lines.push(`<strong>${this.escapeHtml(invoice.billTo.name)}</strong><br>`);
-    for (const line of billToAddress) {
-      lines.push(`${this.escapeHtml(line)}<br>`);
-    }
-    lines.push("</div>");
-    lines.push("</div>");
-    lines.push("");
-    lines.push('<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">');
-    lines.push("<thead>");
-    lines.push('<tr style="border-bottom: 1px solid #ccc;">');
-    lines.push('<th style="text-align: left; padding: 8px 0;">DESCRIPTION</th>');
-    lines.push('<th style="text-align: right; padding: 8px 0;">QUANTITY</th>');
-    lines.push('<th style="text-align: right; padding: 8px 0;">UNIT PRICE</th>');
-    lines.push('<th style="text-align: right; padding: 8px 0;">AMOUNT</th>');
-    lines.push("</tr>");
-    lines.push("</thead>");
-    lines.push("<tbody>");
-    for (const item of invoice.lineItems) {
-      const quantity = item.quantity.toFixed(2);
-      const unitPrice = this.formatAmount(item.unitPrice, item.currency);
-      const amount = this.formatAmount(item.amount, item.currency);
-      let description = item.description;
-      if (description === "(No Project)") {
-        description = "Services";
+  static calculateCategoryReport(options) {
+    const {
+      entries,
+      schema,
+      rangeStart,
+      rangeEnd,
+      getEffectiveDuration = defaultEffectiveDuration
+    } = options;
+    const categoryField = schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+    }) || schema.fields.find((f) => f.id === "category") || schema.fields[0];
+    const activityField = schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "title";
+    }) || schema.fields.find((f) => f.id === "activity_name") || schema.fields.find((f) => f.id !== (categoryField == null ? void 0 : categoryField.id));
+    const categoryMap = /* @__PURE__ */ new Map();
+    let totalTrackedMinutes = 0;
+    const activeDays = /* @__PURE__ */ new Set();
+    for (const entry of entries) {
+      const minutes = getEffectiveDuration(entry, rangeStart, rangeEnd);
+      if (minutes <= 0)
+        continue;
+      totalTrackedMinutes += minutes;
+      const dateStr = entry.date || formatDateKey(entry.startDateTime);
+      if (dateStr) {
+        activeDays.add(dateStr);
       }
-      lines.push('<tr style="border-bottom: 1px solid #eee;">');
-      lines.push(`<td style="text-align: left; padding: 8px 0;">${this.escapeHtml(description)}</td>`);
-      lines.push(`<td style="text-align: right; padding: 8px 0;">${quantity}</td>`);
-      lines.push(`<td style="text-align: right; padding: 8px 0;">${unitPrice}</td>`);
-      lines.push(`<td style="text-align: right; padding: 8px 0;">${amount}</td>`);
-      lines.push("</tr>");
+      const catVal = categoryField ? getEntryFieldValue(entry, categoryField.id, schema) : "(Unspecified)";
+      const actVal = activityField ? getEntryFieldValue(entry, activityField.id, schema) : "(None)";
+      let catData = categoryMap.get(catVal);
+      if (!catData) {
+        catData = { minutes: 0, entryCount: 0, activityMap: /* @__PURE__ */ new Map() };
+        categoryMap.set(catVal, catData);
+      }
+      catData.minutes += minutes;
+      catData.entryCount += 1;
+      if (actVal && actVal !== "(None)") {
+        const currentActMins = catData.activityMap.get(actVal) || 0;
+        catData.activityMap.set(actVal, currentActMins + minutes);
+      }
     }
-    lines.push("</tbody>");
-    lines.push("</table>");
-    lines.push("");
-    const subtotalFormatted = this.formatAmount(invoice.subtotal, invoice.currency);
-    const totalFormatted = this.formatAmount(invoice.total, invoice.currency);
-    lines.push('<div style="text-align: right; margin-top: 20px;">');
-    lines.push(`<div>SUBTOTAL: ${subtotalFormatted}</div>`);
-    lines.push(`<div><strong>TOTAL: ${totalFormatted}</strong></div>`);
-    lines.push("</div>");
-    lines.push("");
-    return lines.join("\n");
-  }
-  escapeHtml(text5) {
-    return text5.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-  /**
-   * Save invoice to file
-   */
-  async saveInvoice(invoice, markdown) {
-    await this.ensureInvoiceFolder();
-    const filename = `${this.sanitizeFilename(invoice.invoiceNumber)}.md`;
-    const filepath = `${this.settings.invoiceFolder}/${filename}`;
-    const existing = this.app.vault.getAbstractFileByPath(filepath);
-    if (existing) {
-      throw new Error(`Invoice file already exists: ${filepath}`);
+    const items = [];
+    for (const [catName, data] of categoryMap.entries()) {
+      const color2 = categoryField ? getNodeColor(categoryField.id, catName, schema) : getColorForValue(catName);
+      const percentageOfTime = totalTrackedMinutes > 0 ? data.minutes / totalTrackedMinutes * 100 : 0;
+      const activities = [];
+      for (const [actName, actMins] of data.activityMap.entries()) {
+        const percentageOfCategory = data.minutes > 0 ? actMins / data.minutes * 100 : 0;
+        const actColor = activityField ? getNodeColor(activityField.id, actName, schema) : getColorForValue(actName);
+        activities.push({
+          name: actName,
+          totalMinutes: actMins,
+          percentageOfCategory,
+          color: actColor
+        });
+      }
+      activities.sort((a, b) => b.totalMinutes - a.totalMinutes);
+      items.push({
+        category: catName,
+        color: color2,
+        totalMinutes: data.minutes,
+        percentageOfTime,
+        entryCount: data.entryCount,
+        activities
+      });
     }
-    await this.app.vault.create(filepath, markdown);
-    Logger.log("InvoiceGenerator: Created invoice at", filepath);
-    return filepath;
-  }
-  /**
-   * Ensure the invoice folder exists
-   */
-  async ensureInvoiceFolder() {
-    const folderPath = this.settings.invoiceFolder;
-    const existing = this.app.vault.getAbstractFileByPath(folderPath);
-    if (existing instanceof import_obsidian7.TFolder) {
-      return;
-    }
-    await this.app.vault.createFolder(folderPath);
-    Logger.log("InvoiceGenerator: Created invoice folder", folderPath);
-  }
-  // Formatting helpers
-  formatDate(date) {
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  }
-  formatAmount(amount, currency) {
-    return `${amount.toLocaleString(void 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-  }
-  escapeTableCell(text5) {
-    return text5.replace(/\|/g, "\\|");
-  }
-  sanitizeFilename(name) {
-    return name.replace(/[<>:"/\\|?*]/g, "-");
+    items.sort((a, b) => b.totalMinutes - a.totalMinutes);
+    return {
+      activeDaysCount: activeDays.size,
+      categoriesCount: items.length,
+      topCategoryName: items.length > 0 ? items[0].category : "(None)",
+      topCategoryMinutes: items.length > 0 ? items[0].totalMinutes : 0,
+      items
+    };
   }
 };
 
 // src/views/ReportsView.ts
 var MAX_REPORT_DAYS = 90;
-var ReportsView = class extends import_obsidian8.ItemView {
+var ReportsView = class extends import_obsidian7.ItemView {
   constructor(leaf, settings, dataManager) {
     super(leaf);
     // Current report state
-    this.selectedPreset = "this-week";
+    this.selectedPreset = "this-month";
     this.customStartDate = null;
     this.customEndDate = null;
-    this.projectReports = [];
-    this.activityReports = [];
-    this.clientReports = [];
-    this.totalMinutes = 0;
-    // Store current entries and date range for invoice generation
+    // Category report data
+    this.reportSummary = {
+      activeDaysCount: 0,
+      categoriesCount: 0,
+      topCategoryName: "(None)",
+      topCategoryMinutes: 0,
+      items: []
+    };
     this.currentEntries = [];
     this.currentRangeStart = null;
     this.currentRangeEnd = null;
-    // Expanded clients (for project breakdown)
-    this.expandedClients = /* @__PURE__ */ new Set();
-    // Expanded projects within clients (key: "clientId:projectName")
-    this.expandedClientProjects = /* @__PURE__ */ new Set();
+    // Expanded category names
+    this.expandedCategories = /* @__PURE__ */ new Set();
     this.settings = settings;
     this.dataManager = dataManager;
   }
@@ -14154,17 +15343,15 @@ var ReportsView = class extends import_obsidian8.ItemView {
     this.customDateInputs.addClass("is-hidden");
     this.renderCustomDateInputs();
     this.summaryContainer = this.contentContainer.createDiv("reports-summary");
-    this.reportsContainer = this.contentContainer.createDiv("reports-table-container");
-    this.activityContainer = this.contentContainer.createDiv("reports-table-container");
-    this.clientContainer = this.contentContainer.createDiv("reports-table-container");
+    this.categoryTableContainer = this.contentContainer.createDiv("reports-table-container");
   }
   /**
-   * Render the header
+   * Render the header with title and export controls
    */
   renderHeader(container) {
     const header = container.createDiv("reports-header");
     const titleSection = header.createDiv("reports-header-title");
-    titleSection.createEl("h2", { text: "Time reports" });
+    titleSection.createEl("h2", { text: "Category reports" });
     const controls = header.createDiv("reports-header-controls");
     const exportCsvBtn = controls.createEl("button", {
       text: "Export CSV",
@@ -14243,7 +15430,7 @@ var ReportsView = class extends import_obsidian8.ItemView {
     if (preset === "custom") {
       this.customDateInputs.removeClass("is-hidden");
       if (!this.customStartDate || !this.customEndDate) {
-        const { start, end } = this.getDateRange("this-week");
+        const { start, end } = this.getDateRange("this-month");
         this.customStartDate = start;
         this.customEndDate = end;
         this.renderCustomDateInputs();
@@ -14327,7 +15514,7 @@ var ReportsView = class extends import_obsidian8.ItemView {
     const { start, end } = this.getDateRange(this.selectedPreset);
     const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1e3 * 60 * 60 * 24));
     if (daysDiff > MAX_REPORT_DAYS) {
-      new import_obsidian8.Notice(`Report range limited to ${MAX_REPORT_DAYS} days for performance. Please select a shorter range.`);
+      new import_obsidian7.Notice(`Report range limited to ${MAX_REPORT_DAYS} days for performance. Please select a shorter range.`);
       return;
     }
     Logger.log("ReportsView: Loading report for", start.toDateString(), "to", end.toDateString());
@@ -14336,394 +15523,131 @@ var ReportsView = class extends import_obsidian8.ItemView {
     this.currentEntries = entries;
     this.currentRangeStart = start;
     this.currentRangeEnd = end;
-    this.calculateReports(entries, start, end);
-    this.calculateActivityReports(entries, start, end);
-    this.calculateClientReports(entries, start, end);
+    const schema = this.dataManager.getSchema();
+    this.reportSummary = ReportAggregator.calculateCategoryReport({
+      entries,
+      schema,
+      rangeStart: start,
+      rangeEnd: end,
+      getEffectiveDuration: (entry, s, e) => this.dataManager.getEffectiveDuration(entry, s, e)
+    });
+    if (this.expandedCategories.size === 0) {
+      for (const item of this.reportSummary.items) {
+        this.expandedCategories.add(item.category);
+      }
+    }
     this.renderSummary(start, end);
-    this.renderClientTable();
+    this.renderCategoryTable();
   }
   /**
-   * Calculate project and activity reports from entries
-   * Uses effective duration to handle midnight-spanning entries correctly
-   */
-  calculateReports(entries, rangeStart, rangeEnd) {
-    const projectMap = /* @__PURE__ */ new Map();
-    this.totalMinutes = 0;
-    for (const entry of entries) {
-      const effectiveMinutes = this.dataManager.getEffectiveDuration(entry, rangeStart, rangeEnd);
-      if (effectiveMinutes <= 0)
-        continue;
-      const projectName = entry.project || "(No Project)";
-      if (!projectMap.has(projectName)) {
-        projectMap.set(projectName, { minutes: 0, activityMap: /* @__PURE__ */ new Map() });
-      }
-      const projectData = projectMap.get(projectName);
-      projectData.minutes += effectiveMinutes;
-      this.totalMinutes += effectiveMinutes;
-      const activityName = entry.activity || "(No Activity)";
-      const current = projectData.activityMap.get(activityName) || 0;
-      projectData.activityMap.set(activityName, current + effectiveMinutes);
-    }
-    this.projectReports = [];
-    for (const [projectName, data] of projectMap) {
-      const projectColor = this.getProjectColor(projectName);
-      const percentage = this.totalMinutes > 0 ? data.minutes / this.totalMinutes * 100 : 0;
-      const activityBreakdown = [];
-      for (const [activityName, activityMinutes] of data.activityMap) {
-        const activityColor = this.getActivityColor(activityName);
-        activityBreakdown.push({
-          activity: activityName,
-          color: activityColor,
-          totalMinutes: activityMinutes,
-          percentageOfProject: data.minutes > 0 ? activityMinutes / data.minutes * 100 : 0
-        });
-      }
-      activityBreakdown.sort((a, b) => b.totalMinutes - a.totalMinutes);
-      this.projectReports.push({
-        project: projectName,
-        color: projectColor,
-        totalMinutes: data.minutes,
-        percentage,
-        activityBreakdown
-      });
-    }
-    this.projectReports.sort((a, b) => b.totalMinutes - a.totalMinutes);
-  }
-  /**
-   * Calculate activity reports from entries
-   * Activities are mutually exclusive so percentages add up to 100%
-   */
-  calculateActivityReports(entries, rangeStart, rangeEnd) {
-    const activityMap = /* @__PURE__ */ new Map();
-    for (const entry of entries) {
-      const effectiveMinutes = this.dataManager.getEffectiveDuration(entry, rangeStart, rangeEnd);
-      if (effectiveMinutes <= 0)
-        continue;
-      const activityName = entry.activity || "(No Activity)";
-      const current = activityMap.get(activityName) || 0;
-      activityMap.set(activityName, current + effectiveMinutes);
-    }
-    this.activityReports = [];
-    for (const [activityName, minutes] of activityMap) {
-      const activityColor = this.getActivityColor(activityName);
-      const percentage = this.totalMinutes > 0 ? minutes / this.totalMinutes * 100 : 0;
-      this.activityReports.push({
-        activity: activityName,
-        name: activityName,
-        color: activityColor,
-        totalMinutes: minutes,
-        percentage
-      });
-    }
-    this.activityReports.sort((a, b) => b.totalMinutes - a.totalMinutes);
-  }
-  /**
-   * Render the summary section
+   * Render the summary KPI section
+   * Omits total billing hours and highlights category focus
    */
   renderSummary(start, end) {
     this.summaryContainer.empty();
     const rangeLabel = this.summaryContainer.createDiv("reports-range-label");
     rangeLabel.setText(this.formatDateRange(start, end));
-    const totalCard = this.summaryContainer.createDiv("reports-total-card");
-    totalCard.createDiv({ text: "Total Time", cls: "reports-total-label" });
-    totalCard.createDiv({ text: this.formatDuration(this.totalMinutes), cls: "reports-total-value" });
-    const projectCard = this.summaryContainer.createDiv("reports-summary-card");
-    projectCard.createDiv({ text: "Projects", cls: "reports-summary-label" });
-    projectCard.createDiv({ text: String(this.projectReports.length), cls: "reports-summary-value" });
-    const clientCard = this.summaryContainer.createDiv("reports-summary-card");
-    clientCard.createDiv({ text: "Clients", cls: "reports-summary-label" });
-    clientCard.createDiv({ text: String(this.clientReports.length), cls: "reports-summary-value" });
+    const focusCard = this.summaryContainer.createDiv("reports-summary-card reports-top-category-card");
+    focusCard.createDiv({ text: "Top Category", cls: "reports-summary-label" });
+    const focusText = this.reportSummary.topCategoryMinutes > 0 ? `${this.reportSummary.topCategoryName} (${this.formatDuration(this.reportSummary.topCategoryMinutes)})` : "(None)";
+    focusCard.createDiv({ text: focusText, cls: "reports-summary-value" });
+    const daysCard = this.summaryContainer.createDiv("reports-summary-card");
+    daysCard.createDiv({ text: "Active Days", cls: "reports-summary-label" });
+    daysCard.createDiv({
+      text: `${this.reportSummary.activeDaysCount} ${this.reportSummary.activeDaysCount === 1 ? "day" : "days"}`,
+      cls: "reports-summary-value"
+    });
+    const catCountCard = this.summaryContainer.createDiv("reports-summary-card");
+    catCountCard.createDiv({ text: "Categories Tracked", cls: "reports-summary-label" });
+    catCountCard.createDiv({
+      text: `${this.reportSummary.categoriesCount} ${this.reportSummary.categoriesCount === 1 ? "category" : "categories"}`,
+      cls: "reports-summary-value"
+    });
   }
   /**
-   * Calculate client reports from entries
-   * Groups time by client (using entry.client directly)
+   * Render the category breakdown table showing time spent per category
    */
-  calculateClientReports(entries, rangeStart, rangeEnd) {
-    if (this.settings.clients.length === 0) {
-      this.clientReports = [];
-      return;
-    }
-    const clientMap = /* @__PURE__ */ new Map();
-    for (const entry of entries) {
-      const effectiveMinutes = this.dataManager.getEffectiveDuration(entry, rangeStart, rangeEnd);
-      if (effectiveMinutes <= 0)
-        continue;
-      const projectName = entry.project || "(No Project)";
-      const activityName = entry.activity || "(No Activity)";
-      const clientId = entry.client;
-      if (!clientMap.has(clientId)) {
-        clientMap.set(clientId, { minutes: 0, projects: /* @__PURE__ */ new Map() });
-      }
-      const clientData = clientMap.get(clientId);
-      clientData.minutes += effectiveMinutes;
-      if (!clientData.projects.has(projectName)) {
-        clientData.projects.set(projectName, { minutes: 0, activities: /* @__PURE__ */ new Map() });
-      }
-      const projectData = clientData.projects.get(projectName);
-      projectData.minutes += effectiveMinutes;
-      const currentActivityMinutes = projectData.activities.get(activityName) || 0;
-      projectData.activities.set(activityName, currentActivityMinutes + effectiveMinutes);
-    }
-    this.clientReports = [];
-    let totalClientMinutes = 0;
-    for (const [, data] of clientMap) {
-      totalClientMinutes += data.minutes;
-    }
-    for (const [clientId, data] of clientMap) {
-      const client = this.settings.clients.find((c) => c.id === clientId);
-      if (!client)
-        continue;
-      const percentage = totalClientMinutes > 0 ? data.minutes / totalClientMinutes * 100 : 0;
-      const billableAmount = client.rate * (data.minutes / 60);
-      const projectBreakdown = [];
-      for (const [projectName, projectData] of data.projects) {
-        const projectColor = this.getProjectColor(projectName);
-        const activityBreakdown = [];
-        for (const [activityName, activityMinutes] of projectData.activities) {
-          activityBreakdown.push({
-            activity: activityName,
-            color: this.getActivityColor(activityName),
-            totalMinutes: activityMinutes,
-            percentageOfProject: projectData.minutes > 0 ? activityMinutes / projectData.minutes * 100 : 0
-          });
-        }
-        activityBreakdown.sort((a, b) => b.totalMinutes - a.totalMinutes);
-        projectBreakdown.push({
-          project: projectName,
-          color: projectColor,
-          totalMinutes: projectData.minutes,
-          percentage: data.minutes > 0 ? projectData.minutes / data.minutes * 100 : 0,
-          activityBreakdown
-        });
-      }
-      projectBreakdown.sort((a, b) => b.totalMinutes - a.totalMinutes);
-      this.clientReports.push({
-        clientId,
-        name: client.name,
-        color: client.color,
-        rate: client.rate,
-        currency: client.currency,
-        totalMinutes: data.minutes,
-        billableAmount,
-        percentage,
-        projectBreakdown
-      });
-    }
-    this.clientReports.sort((a, b) => b.totalMinutes - a.totalMinutes);
-  }
-  /**
-   * Render the client breakdown table (Client → Project → Activity hierarchy)
-   */
-  renderClientTable() {
-    var _a;
-    this.clientContainer.empty();
-    if (this.clientReports.length === 0) {
-      this.clientContainer.createDiv({
+  renderCategoryTable() {
+    this.categoryTableContainer.empty();
+    if (this.reportSummary.items.length === 0) {
+      this.categoryTableContainer.createDiv({
         text: "No time entries found for this period.",
         cls: "reports-empty"
       });
       return;
     }
-    const table = this.clientContainer.createEl("table", { cls: "reports-table" });
+    const table = this.categoryTableContainer.createEl("table", { cls: "reports-table" });
     const thead = table.createEl("thead");
     const headerRow = thead.createEl("tr");
-    headerRow.createEl("th", { text: "Client / project / activity" });
-    headerRow.createEl("th", { text: "Hours", cls: "reports-col-hours" });
-    headerRow.createEl("th", { text: "Billable", cls: "reports-col-billable" });
-    headerRow.createEl("th", { text: "%", cls: "reports-col-percent" });
-    headerRow.createEl("th", { text: "", cls: "reports-col-bar" });
+    headerRow.createEl("th", { text: "Category / Activity" });
+    headerRow.createEl("th", { text: "Time Spent", cls: "reports-col-hours" });
+    headerRow.createEl("th", { text: "Share", cls: "reports-col-percent" });
+    headerRow.createEl("th", { text: "Distribution", cls: "reports-col-bar" });
     const tbody = table.createEl("tbody");
-    for (const report of this.clientReports) {
-      const row = tbody.createEl("tr", { cls: "reports-client-row" });
-      row.addEventListener("click", () => this.toggleClientExpand(report.clientId));
-      const nameCell = row.createEl("td", { cls: "reports-client-name" });
-      const colorDot = nameCell.createSpan("reports-color-dot");
-      colorDot.style.backgroundColor = report.color;
-      const expandIcon = nameCell.createSpan("reports-expand-icon");
-      expandIcon.setText(this.expandedClients.has(report.clientId) ? "\u25BC" : "\u25B6");
-      nameCell.createSpan({ text: report.name });
-      if (report.totalMinutes > 0) {
-        const invoiceBtn = nameCell.createEl("button", {
-          text: "Invoice",
-          cls: "reports-invoice-btn"
-        });
-        invoiceBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.openInvoiceModal(report.clientId, report.billableAmount);
+    for (const item of this.reportSummary.items) {
+      const hasActivities = item.activities && item.activities.length > 0;
+      const isExpanded = this.expandedCategories.has(item.category);
+      const catRow = tbody.createEl("tr", { cls: "reports-category-row" });
+      if (hasActivities) {
+        catRow.addEventListener("click", () => {
+          if (this.expandedCategories.has(item.category)) {
+            this.expandedCategories.delete(item.category);
+          } else {
+            this.expandedCategories.add(item.category);
+          }
+          this.renderCategoryTable();
         });
       }
-      row.createEl("td", {
-        text: this.formatDuration(report.totalMinutes),
-        cls: "reports-col-hours"
+      const nameCell = catRow.createEl("td", { cls: "reports-category-name" });
+      const expandIcon = nameCell.createSpan("reports-expand-icon");
+      if (hasActivities) {
+        expandIcon.setText(isExpanded ? "\u25BC" : "\u25B6");
+      } else {
+        expandIcon.setText(" ");
+      }
+      const colorDot = nameCell.createSpan("reports-color-dot");
+      colorDot.style.backgroundColor = item.color;
+      const labelSpan = nameCell.createSpan({ text: item.category, cls: "reports-category-title" });
+      if (item.entryCount > 1) {
+        nameCell.createSpan({ text: ` (${item.entryCount} sessions)`, cls: "reports-entry-count" });
+      }
+      catRow.createEl("td", {
+        text: this.formatDuration(item.totalMinutes),
+        cls: "reports-col-hours reports-category-hours"
       });
-      row.createEl("td", {
-        text: this.formatCurrency(report.billableAmount, report.currency),
-        cls: "reports-col-billable"
-      });
-      row.createEl("td", {
-        text: `${report.percentage.toFixed(1)}%`,
+      catRow.createEl("td", {
+        text: `${item.percentageOfTime.toFixed(1)}%`,
         cls: "reports-col-percent"
       });
-      const barCell = row.createEl("td", { cls: "reports-col-bar" });
+      const barCell = catRow.createEl("td", { cls: "reports-col-bar" });
       const bar = barCell.createDiv("reports-bar");
-      bar.style.width = `${report.percentage}%`;
-      bar.style.backgroundColor = report.color;
-      if (this.expandedClients.has(report.clientId)) {
-        for (const projectReport of report.projectBreakdown) {
-          const projectKey = `${report.clientId}:${projectReport.project}`;
-          const projectExpanded = this.expandedClientProjects.has(projectKey);
-          const hasActivities = projectReport.activityBreakdown.length > 0;
-          const projectRow = tbody.createEl("tr", { cls: "reports-project-nested-row" });
-          if (hasActivities) {
-            projectRow.addEventListener("click", (e) => {
-              e.stopPropagation();
-              this.toggleProjectExpand(projectKey);
-            });
-          }
-          const projectNameCell = projectRow.createEl("td", { cls: "reports-project-nested-name" });
-          const projectDot = projectNameCell.createSpan("reports-color-dot");
-          projectDot.style.backgroundColor = projectReport.color;
-          if (hasActivities) {
-            const projectExpandIcon = projectNameCell.createSpan("reports-expand-icon");
-            projectExpandIcon.setText(projectExpanded ? "\u25BC" : "\u25B6");
-          }
-          projectNameCell.createSpan({ text: projectReport.project });
-          projectRow.createEl("td", {
-            text: this.formatDuration(projectReport.totalMinutes),
+      bar.style.width = `${Math.min(100, Math.max(1, item.percentageOfTime))}%`;
+      bar.style.backgroundColor = item.color;
+      if (hasActivities && isExpanded) {
+        for (const act of item.activities) {
+          const actRow = tbody.createEl("tr", { cls: "reports-activity-nested-row" });
+          const actNameCell = actRow.createEl("td", { cls: "reports-activity-nested-name" });
+          actNameCell.style.paddingLeft = "36px";
+          const actDot = actNameCell.createSpan("reports-color-dot");
+          actDot.style.backgroundColor = act.color;
+          actNameCell.createSpan({ text: act.name });
+          actRow.createEl("td", {
+            text: this.formatDuration(act.totalMinutes),
             cls: "reports-col-hours"
           });
-          projectRow.createEl("td", { cls: "reports-col-billable" });
-          projectRow.createEl("td", {
-            text: `${projectReport.percentage.toFixed(1)}%`,
+          actRow.createEl("td", {
+            text: `${act.percentageOfCategory.toFixed(1)}%`,
             cls: "reports-col-percent"
           });
-          const projectBarCell = projectRow.createEl("td", { cls: "reports-col-bar" });
-          const projectBar = projectBarCell.createDiv("reports-bar reports-bar-nested");
-          projectBar.style.width = `${projectReport.percentage}%`;
-          projectBar.style.backgroundColor = projectReport.color;
-          if (projectExpanded && hasActivities) {
-            for (const activityReport of projectReport.activityBreakdown) {
-              const activityRow = tbody.createEl("tr", { cls: "reports-activity-nested-row" });
-              const activityNameCell = activityRow.createEl("td", { cls: "reports-activity-nested-name" });
-              const activityDot = activityNameCell.createSpan("reports-color-dot");
-              activityDot.style.backgroundColor = activityReport.color;
-              activityNameCell.createSpan({ text: activityReport.activity });
-              activityRow.createEl("td", {
-                text: this.formatDuration(activityReport.totalMinutes),
-                cls: "reports-col-hours"
-              });
-              activityRow.createEl("td", { cls: "reports-col-billable" });
-              activityRow.createEl("td", {
-                text: `${activityReport.percentageOfProject.toFixed(1)}%`,
-                cls: "reports-col-percent"
-              });
-              const activityBarCell = activityRow.createEl("td", { cls: "reports-col-bar" });
-              const activityBar = activityBarCell.createDiv("reports-bar reports-bar-activity");
-              activityBar.style.width = `${activityReport.percentageOfProject}%`;
-              activityBar.style.backgroundColor = activityReport.color;
-            }
-          }
+          const actBarCell = actRow.createEl("td", { cls: "reports-col-bar" });
+          const actBar = actBarCell.createDiv("reports-bar reports-bar-nested");
+          actBar.style.width = `${Math.min(100, Math.max(1, act.percentageOfCategory))}%`;
+          actBar.style.backgroundColor = act.color;
         }
       }
     }
-    const totalRow = tbody.createEl("tr", { cls: "reports-total-row" });
-    totalRow.createEl("td", { text: "Total", cls: "reports-total-label" });
-    let totalMinutes = 0;
-    let totalBillable = 0;
-    for (const report of this.clientReports) {
-      totalMinutes += report.totalMinutes;
-      totalBillable += report.billableAmount;
-    }
-    totalRow.createEl("td", {
-      text: this.formatDuration(totalMinutes),
-      cls: "reports-col-hours"
-    });
-    const currency = ((_a = this.clientReports[0]) == null ? void 0 : _a.currency) || "USD";
-    totalRow.createEl("td", {
-      text: this.formatCurrency(totalBillable, currency),
-      cls: "reports-col-billable"
-    });
-    totalRow.createEl("td", { text: "", cls: "reports-col-percent" });
-    totalRow.createEl("td", { text: "", cls: "reports-col-bar" });
   }
-  /**
-   * Toggle client expansion to show/hide project breakdown
-   */
-  toggleClientExpand(clientId) {
-    if (this.expandedClients.has(clientId)) {
-      this.expandedClients.delete(clientId);
-    } else {
-      this.expandedClients.add(clientId);
-    }
-    this.renderClientTable();
-  }
-  toggleProjectExpand(projectKey) {
-    if (this.expandedClientProjects.has(projectKey)) {
-      this.expandedClientProjects.delete(projectKey);
-    } else {
-      this.expandedClientProjects.add(projectKey);
-    }
-    this.renderClientTable();
-  }
-  /**
-   * Open the invoice modal for a client
-   */
-  openInvoiceModal(clientId, totalAmount) {
-    const client = this.settings.clients.find((c) => c.id === clientId);
-    if (!client) {
-      new import_obsidian8.Notice("Client not found");
-      return;
-    }
-    if (!this.currentRangeStart || !this.currentRangeEnd) {
-      new import_obsidian8.Notice("No date range selected");
-      return;
-    }
-    const modalData = {
-      client,
-      periodStart: this.currentRangeStart,
-      periodEnd: this.currentRangeEnd,
-      totalAmount
-    };
-    const modal = new InvoiceModal(
-      this.app,
-      modalData,
-      (result) => {
-        void this.generateInvoice(client, result);
-      }
-    );
-    modal.open();
-  }
-  /**
-   * Generate the invoice file
-   */
-  async generateInvoice(client, modalResult) {
-    if (!this.currentRangeStart || !this.currentRangeEnd) {
-      new import_obsidian8.Notice("No date range selected");
-      return;
-    }
-    try {
-      const generator = new InvoiceGenerator(this.app, this.settings, this.dataManager);
-      const invoiceData = generator.generateInvoiceData(
-        this.currentEntries,
-        client,
-        modalResult,
-        this.currentRangeStart,
-        this.currentRangeEnd
-      );
-      const markdown = generator.generateMarkdown(invoiceData);
-      const filepath = await generator.saveInvoice(invoiceData, markdown);
-      new import_obsidian8.Notice(`Invoice created: ${filepath}`);
-      const file = this.app.vault.getAbstractFileByPath(filepath);
-      if (file) {
-        await this.app.workspace.getLeaf().openFile(file);
-      }
-    } catch (error) {
-      Logger.log("ReportsView: Error generating invoice", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      new import_obsidian8.Notice(`Error generating invoice: ${errorMessage}`);
-    }
-  }
-  // Helper methods
+  // Helper formatting methods
   formatDuration(minutes) {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
@@ -14732,14 +15656,6 @@ var ReportsView = class extends import_obsidian8.ItemView {
     if (mins === 0)
       return `${hours}h`;
     return `${hours}h ${mins}m`;
-  }
-  formatCurrency(amount, currency) {
-    return new Intl.NumberFormat(void 0, {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(amount);
   }
   formatDateRange(start, end) {
     const sameDay = start.toDateString() === end.toDateString();
@@ -14753,18 +15669,6 @@ var ReportsView = class extends import_obsidian8.ItemView {
     }
     return `${start.toLocaleDateString(void 0, { month: "short", day: "numeric" })} - ${end.toLocaleDateString(void 0, options)}`;
   }
-  getProjectColor(projectName) {
-    if (projectName === "(No Project)")
-      return "#666";
-    const project = this.settings.projects.find((p) => p.name === projectName || p.id === projectName);
-    return (project == null ? void 0 : project.color) || "#4f46e5";
-  }
-  getActivityColor(activityName) {
-    if (activityName === "(No Activity)")
-      return "#666";
-    const activity = this.settings.activities.find((a) => a.name === activityName || a.id === activityName);
-    return (activity == null ? void 0 : activity.color) || "#f59e0b";
-  }
   /**
    * Export current report data to CSV
    */
@@ -14772,55 +15676,48 @@ var ReportsView = class extends import_obsidian8.ItemView {
     const { start, end } = this.getDateRange(this.selectedPreset);
     const entries = await this.dataManager.loadDateRange(start, end);
     if (entries.length === 0) {
-      Logger.log("ReportsView: No entries to export");
+      new import_obsidian7.Notice("No entries to export");
       return;
     }
     const csv = this.generateCSV(entries);
     const startStr = TableParser.getDateString(start);
     const endStr = TableParser.getDateString(end);
-    const filename = `time-entries-${startStr}-to-${endStr}.csv`;
+    const filename = `category-entries-${startStr}-to-${endStr}.csv`;
     this.downloadCSV(csv, filename);
   }
   /**
-   * Generate CSV content from time entries
+   * Generate CSV content with dynamic schema fields (without client)
    */
   generateCSV(entries) {
-    const headers = ["Start", "End", "Duration", "Description", "Client", "Project", "Activity", "Notes"];
+    const schema = this.dataManager.getSchema();
+    const exportFields = schema.fields.filter((f) => f.id.toLowerCase() !== "client");
+    const headers = ["Start", "End", "Duration", ...exportFields.map((f) => f.label)];
     const sorted = [...entries].sort(
       (a, b) => a.startDateTime.getTime() - b.startDateTime.getTime()
     );
     const rows = [headers];
     for (const entry of sorted) {
-      const client = this.settings.clients.find((c) => c.id === entry.client);
-      const clientName = (client == null ? void 0 : client.name) || entry.client;
       const row = [
         TableParser.formatDateTime(entry.startDateTime),
         TableParser.formatDateTime(entry.endDateTime),
-        this.formatDuration(entry.durationMinutes),
-        entry.description || "",
-        clientName,
-        entry.project || "",
-        entry.activity || "",
-        entry.linkedNote || ""
+        this.formatDuration(entry.durationMinutes)
       ];
+      for (const field of exportFields) {
+        const val = getEntryFieldValue(entry, field.id, schema);
+        row.push(val === "(None)" ? "" : val);
+      }
       rows.push(row);
     }
     return rows.map(
       (row) => row.map((cell) => this.escapeCSVCell(cell)).join(",")
     ).join("\n");
   }
-  /**
-   * Escape a cell value for CSV format
-   */
   escapeCSVCell(value) {
     if (value.includes(",") || value.includes('"') || value.includes("\n")) {
       return `"${value.replace(/"/g, '""')}"`;
     }
     return value;
   }
-  /**
-   * Trigger browser download of CSV file
-   */
   downloadCSV(content3, filename) {
     const blob = new Blob([content3], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -14841,19 +15738,21 @@ var ReportsView = class extends import_obsidian8.ItemView {
     const { start, end } = this.getDateRange(this.selectedPreset);
     const entries = await this.dataManager.loadDateRange(start, end);
     if (entries.length === 0) {
-      new import_obsidian8.Notice("No entries to export");
+      new import_obsidian7.Notice("No entries to export");
       return;
     }
     const json = this.generateJSON(entries, start, end);
     const startStr = TableParser.getDateString(start);
     const endStr = TableParser.getDateString(end);
-    const filename = `time-entries-${startStr}-to-${endStr}.json`;
+    const filename = `category-entries-${startStr}-to-${endStr}.json`;
     this.downloadJSON(json, filename);
   }
   /**
-   * Generate JSON content from time entries
+   * Generate JSON content from time entries (without client)
    */
   generateJSON(entries, start, end) {
+    const schema = this.dataManager.getSchema();
+    const exportFields = schema.fields.filter((f) => f.id.toLowerCase() !== "client");
     const sorted = [...entries].sort(
       (a, b) => a.startDateTime.getTime() - b.startDateTime.getTime()
     );
@@ -14864,23 +15763,38 @@ var ReportsView = class extends import_obsidian8.ItemView {
         end: TableParser.getDateString(end)
       },
       totalEntries: sorted.length,
-      entries: sorted.map((entry) => ({
-        date: entry.date,
-        start: entry.start,
-        end: entry.end,
-        durationMinutes: entry.durationMinutes,
-        description: entry.description,
-        client: entry.client,
-        project: entry.project || null,
-        activity: entry.activity || null,
-        linkedNote: entry.linkedNote || null
-      }))
+      activeDays: this.reportSummary.activeDaysCount,
+      categoriesTracked: this.reportSummary.categoriesCount,
+      categories: this.reportSummary.items.map((cat) => ({
+        category: cat.category,
+        timeSpentMinutes: cat.totalMinutes,
+        percentageOfTime: cat.percentageOfTime,
+        entryCount: cat.entryCount,
+        activities: cat.activities.map((act) => ({
+          activity: act.name,
+          timeSpentMinutes: act.totalMinutes,
+          percentageOfCategory: act.percentageOfCategory
+        }))
+      })),
+      entries: sorted.map((entry) => {
+        const dynamicFields = {};
+        for (const field of exportFields) {
+          const val = getEntryFieldValue(entry, field.id, schema);
+          if (val !== "(None)") {
+            dynamicFields[field.id] = val;
+          }
+        }
+        return {
+          date: entry.date,
+          start: entry.start,
+          end: entry.end,
+          durationMinutes: entry.durationMinutes,
+          ...dynamicFields
+        };
+      })
     };
     return JSON.stringify(exportData, null, 2);
   }
-  /**
-   * Trigger browser download of JSON file
-   */
   downloadJSON(content3, filename) {
     const blob = new Blob([content3], { type: "application/json;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -14897,12 +15811,17 @@ var ReportsView = class extends import_obsidian8.ItemView {
 };
 
 // main.ts
-var WhereDidTheTimeGoPlugin = class extends import_obsidian9.Plugin {
+var WhereDidTheTimeGoPlugin = class extends import_obsidian8.Plugin {
   async onload() {
     Logger.debug("Loading Where Did The Time Go plugin");
     await this.loadSettings();
     Logger.setDebugMode(this.settings.debugMode);
-    this.dataManager = new DataManager(this.app.vault, this.settings);
+    this.schemaManager = new SchemaManager(this.app.vault, this.settings);
+    await this.schemaManager.loadSchema();
+    this.app.workspace.onLayoutReady(async () => {
+      await this.schemaManager.loadSchema();
+    });
+    this.dataManager = new DataManager(this.app.vault, this.settings, this.schemaManager);
     this.registerView(
       VIEW_TYPE_TIMELINE,
       (leaf) => new TimelineView(leaf, this.settings, this.dataManager)
@@ -14938,11 +15857,28 @@ var WhereDidTheTimeGoPlugin = class extends import_obsidian9.Plugin {
         this.openCreateEntryModal();
       }
     });
+    this.addCommand({
+      id: "open-today-diary",
+      name: "Open today's diary",
+      callback: () => {
+        const todayStr = TableParser.getDateString(new Date());
+        new DiaryModal(this.app, this.dataManager, todayStr).open();
+      }
+    });
     this.addSettingTab(new TimeTrackerSettingTab(this.app, this));
-    const debouncedRefresh = (0, import_obsidian9.debounce)(() => this.refreshTimelineViews(), 500, true);
+    const debouncedRefresh = (0, import_obsidian8.debounce)(() => this.refreshTimelineViews(), 500, true);
+    const debouncedSchemaReload = (0, import_obsidian8.debounce)(async () => {
+      Logger.debug("Schema.md modified, reloading schema");
+      await this.schemaManager.loadSchema();
+      debouncedRefresh();
+    }, 1e3, true);
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (file.path.startsWith(this.settings.timeTrackingFolder)) {
+          if (file.name === "Schema.md") {
+            debouncedSchemaReload();
+            return;
+          }
           const monthMatch = file.name.match(/^(\d{4}-\d{2})\.md$/);
           if (monthMatch) {
             this.dataManager.invalidateMonth(monthMatch[1]);
@@ -14961,6 +15897,9 @@ var WhereDidTheTimeGoPlugin = class extends import_obsidian9.Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
     Logger.setDebugMode(this.settings.debugMode);
+    if (this.schemaManager) {
+      this.schemaManager.updateSettings(this.settings);
+    }
     if (this.dataManager) {
       this.dataManager.updateSettings(this.settings);
     }

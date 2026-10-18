@@ -1,5 +1,5 @@
 import { TableParser } from '../src/data/TableParser';
-import { TimeEntry } from '../src/types';
+import { TimeEntry, TrackingSchemaConfig, DailyDiary } from '../src/types';
 
 describe('TableParser', () => {
     // Helper to create a test entry
@@ -170,7 +170,7 @@ describe('TableParser', () => {
 
             expect(result).toContain('WARNING');
             expect(result).toContain('# 2025-01');
-            expect(result).toContain('| Start |');
+            expect(result).toMatch(/\|\s*Start\s*\|/);
             expect(result).toContain('test-client');
         });
     });
@@ -246,6 +246,160 @@ describe('TableParser', () => {
             expect(parsed.entries[0].description).toBe('First');
             expect(parsed.entries[1].description).toBe('Second');
             expect(parsed.entries[2].description).toBe('Third');
+        });
+    });
+
+    describe('multi-section month file parsing and serialization', () => {
+        const testSchema: TrackingSchemaConfig = {
+            version: 1,
+            fields: [
+                { id: 'category', label: 'Category', type: 'enum', required: true, multiple: false },
+                { id: 'activity_name', label: 'Activity Name', type: 'string', required: true, multiple: false },
+                { id: 'location', label: 'Location', type: 'enum', required: false, multiple: false },
+                { id: 'tags', label: 'Tags', type: 'string', required: false, multiple: true },
+            ],
+            defaultReportGrouping: ['category', 'activity_name'],
+        };
+
+        it('should parse ## Daily Diaries section with multiple date subsections', () => {
+            const content = `# 2025-01
+
+| Start | End | Category | Activity Name | Location | Tags |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 2025-01-15 09:00 | 2025-01-15 10:00 | Deep Work | Coding | Home Office | coding, agent |
+
+## Daily Diaries
+
+### 2025-01-15
+Felt very focused today. Managed to finish the refactor ahead of schedule.
+
+### 2025-01-16
+Meetings all morning. Afternoon was productive.
+`;
+
+            const parsed = TableParser.parseMonthFile(content, '2025-01', testSchema);
+
+            expect(parsed.entries.length).toBe(1);
+            expect(parsed.entries[0].description).toBe('Coding');
+            expect(parsed.entries[0].fields?.['category']).toBe('Deep Work');
+            expect(parsed.entries[0].fields?.['tags']).toEqual(['coding', 'agent']);
+
+            expect(parsed.diariesByDate.size).toBe(2);
+            expect(parsed.diariesByDate.get('2025-01-15')?.content).toBe(
+                'Felt very focused today. Managed to finish the refactor ahead of schedule.'
+            );
+            expect(parsed.diariesByDate.get('2025-01-16')?.content).toBe(
+                'Meetings all morning. Afternoon was productive.'
+            );
+        });
+
+        it('should parse ## Monthly AI Summary section', () => {
+            const content = `# 2025-01
+
+| Start | End | Category | Activity Name |
+| :--- | :--- | :--- | :--- |
+| 2025-01-15 09:00 | 2025-01-15 10:00 | Deep Work | Coding |
+
+## Daily Diaries
+
+### 2025-01-15
+Good day.
+
+## Monthly AI Summary
+
+You spent 65% of your time in Deep Work this month. Great progress on goals!
+`;
+
+            const parsed = TableParser.parseMonthFile(content, '2025-01', testSchema);
+            expect(parsed.aiSummary).toBe(
+                'You spent 65% of your time in Deep Work this month. Great progress on goals!'
+            );
+        });
+
+        it('should round-trip entries, daily diaries, and AI summary with generateMonthFile', () => {
+            const entries: TimeEntry[] = [
+                {
+                    date: '2025-01-15',
+                    start: '09:00',
+                    end: '11:00',
+                    description: 'Architecture Design',
+                    client: '',
+                    startDateTime: new Date(2025, 0, 15, 9, 0),
+                    endDateTime: new Date(2025, 0, 15, 11, 0),
+                    durationMinutes: 120,
+                    lineNumber: 1,
+                    fields: {
+                        category: 'Deep Work',
+                        activity_name: 'Architecture Design',
+                        location: 'Home Office',
+                        tags: ['architecture', 'planning'],
+                    },
+                },
+            ];
+
+            const diaries = new Map<string, DailyDiary>([
+                [
+                    '2025-01-15',
+                    {
+                        date: '2025-01-15',
+                        content: 'Finished design spec for multi-section format.',
+                    },
+                ],
+            ]);
+            const summary = 'Comprehensive month with consistent deep work blocks.';
+
+            const markdown = TableParser.generateMonthFile(entries, '2025-01', testSchema, diaries, summary, true);
+
+            expect(markdown).toContain('## Daily Diaries');
+            expect(markdown).toContain('### 2025-01-15');
+            expect(markdown).toContain('Finished design spec for multi-section format.');
+            expect(markdown).toContain('## Monthly AI Summary');
+            expect(markdown).toContain(summary);
+
+            const reParsed = TableParser.parseMonthFile(markdown, '2025-01', testSchema);
+            expect(reParsed.entries.length).toBe(1);
+            expect(reParsed.entries[0].description).toBe('Architecture Design');
+            expect(reParsed.entries[0].fields?.['category']).toBe('Deep Work');
+            expect(reParsed.entries[0].fields?.['tags']).toEqual(['architecture', 'planning']);
+
+            expect(reParsed.diariesByDate.get('2025-01-15')?.content).toBe(
+                'Finished design spec for multi-section format.'
+            );
+            expect(reParsed.aiSummary).toBe(summary);
+        });
+
+        it('should preserve unmapped legacy columns when generating table with custom schema', () => {
+            const entries: TimeEntry[] = [
+                {
+                    date: '2025-01-15',
+                    start: '09:00',
+                    end: '10:00',
+                    description: 'Legacy task',
+                    client: 'OldClient',
+                    startDateTime: new Date(2025, 0, 15, 9, 0),
+                    endDateTime: new Date(2025, 0, 15, 10, 0),
+                    durationMinutes: 60,
+                    lineNumber: 1,
+                    unmappedFields: {
+                        'LegacyCol': 'custom-legacy-val',
+                    },
+                    fields: {
+                        category: 'Work',
+                        activity_name: 'Legacy task',
+                    },
+                },
+            ];
+
+            const table = TableParser.generateTable(entries, testSchema);
+            expect(table).toContain('LegacyCol');
+            expect(table).toContain('custom-legacy-val');
+            expect(table).toContain('Client');
+            expect(table).toContain('OldClient');
+
+            const reParsed = TableParser.parseMonthFile(table, '2025-01', testSchema);
+            expect(reParsed.entries.length).toBe(1);
+            expect(reParsed.entries[0].client).toBe('OldClient');
+            expect(reParsed.entries[0].unmappedFields?.['LegacyCol']).toBe('custom-legacy-val');
         });
     });
 

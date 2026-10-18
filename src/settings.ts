@@ -1,11 +1,8 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
-import type { Project, Activity } from './types';
+import { App, PluginSettingTab, Setting, TFile, Notice } from 'obsidian';
 import type WhereDidTheTimeGoPlugin from '../main';
-import { ClientModal } from './modals/ClientModal';
 
 export class TimeTrackerSettingTab extends PluginSettingTab {
     plugin: WhereDidTheTimeGoPlugin;
-    private expandedClients: Set<string> = new Set();
 
     constructor(app: App, plugin: WhereDidTheTimeGoPlugin) {
         super(app, plugin);
@@ -17,7 +14,7 @@ export class TimeTrackerSettingTab extends PluginSettingTab {
         containerEl.empty();
 
         containerEl.createEl('p', {
-            text: 'Configure your time tracking settings.',
+            text: 'Configure your personal time tracking settings.',
             cls: 'setting-item-description'
         });
 
@@ -26,7 +23,7 @@ export class TimeTrackerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Time tracking folder')
-            .setDesc('Folder where time entries will be stored (relative to vault root)')
+            .setDesc('Folder where time entries and Schema.md are stored (relative to vault root)')
             .addText(text => text
                 .setPlaceholder('Enter folder name')
                 .setValue(this.plugin.settings.timeTrackingFolder)
@@ -53,6 +50,45 @@ export class TimeTrackerSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.hideTablesInPreview = value;
                     await this.plugin.saveSettings();
+                }));
+
+        // Activity Schema Section
+        new Setting(containerEl).setName("Activity schema (Schema.md)").setHeading();
+        containerEl.createEl('p', {
+            text: 'Categories, activities, locations, tags, and report dimensions are defined in Schema.md within your time tracking folder as an editable Markdown table.',
+            cls: 'setting-item-description'
+        });
+
+        new Setting(containerEl)
+            .setName('Open Schema.md')
+            .setDesc('Open Schema.md in your workspace to edit categories, enum values, and timeline roles')
+            .addButton(button => button
+                .setButtonText('Open Schema.md')
+                .setCta()
+                .onClick(async () => {
+                    const schemaPath = `${this.plugin.settings.timeTrackingFolder}/Schema.md`;
+                    let file = this.app.vault.getAbstractFileByPath(schemaPath);
+                    if (!file && this.plugin.schemaManager) {
+                        await this.plugin.schemaManager.loadSchema();
+                        file = this.app.vault.getAbstractFileByPath(schemaPath);
+                    }
+                    if (file instanceof TFile) {
+                        await this.app.workspace.getLeaf().openFile(file);
+                    } else {
+                        new Notice(`Could not open ${schemaPath}`);
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('Reload schema')
+            .setDesc('Force reload Schema.md if you edited it externally')
+            .addButton(button => button
+                .setButtonText('Reload schema')
+                .onClick(async () => {
+                    if (this.plugin.schemaManager) {
+                        await this.plugin.schemaManager.loadSchema();
+                        new Notice('Schema reloaded successfully');
+                    }
                 }));
 
         // Timeline Display Settings
@@ -132,76 +168,6 @@ export class TimeTrackerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // Bill From Section (for invoices)
-        new Setting(containerEl).setName("Bill from").setHeading();
-        containerEl.createEl('p', {
-            text: 'Your billing information that appears on invoices.',
-            cls: 'setting-item-description'
-        });
-
-        new Setting(containerEl)
-            .setName('Name')
-            .setDesc('Your name or business name')
-            .addText(text => text
-                .setPlaceholder('Enter name')
-                .setValue(this.plugin.settings.billFrom.name)
-                .onChange(async (value) => {
-                    this.plugin.settings.billFrom.name = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Address')
-            .setDesc('Your billing address (multi-line)')
-            .addTextArea(textarea => textarea
-                .setPlaceholder('Enter address')
-                .setValue(this.plugin.settings.billFrom.address)
-                .onChange(async (value) => {
-                    this.plugin.settings.billFrom.address = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Invoice folder')
-            .setDesc('Folder where invoices will be saved (created automatically)')
-            .addText(text => text
-                .setPlaceholder('Enter folder path')
-                .setValue(this.plugin.settings.invoiceFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.invoiceFolder = value || 'TimeTracking/Invoices';
-                    await this.plugin.saveSettings();
-                }));
-
-        // Clients Section
-        new Setting(containerEl).setName("Clients").setHeading();
-        containerEl.createEl('p', {
-            text: 'Define clients for billing. Projects can be assigned to clients for invoicing.',
-            cls: 'setting-item-description'
-        });
-
-        // Client list
-        const clientsContainer = containerEl.createDiv('clients-container');
-        this.renderClientsList(clientsContainer);
-
-        // Add new client button
-        new Setting(containerEl)
-            .addButton(button => button
-                .setButtonText('Add client')
-                .setCta()
-                .onClick(() => {
-                    const modal = new ClientModal(
-                        this.app,
-                        { mode: 'create' },
-                        (client) => {
-                            this.plugin.settings.clients.push(client);
-                            void this.plugin.saveSettings().then(() => {
-                                this.renderClientsList(clientsContainer);
-                            });
-                        }
-                    );
-                    modal.open();
-                }));
-
         // Developer Settings
         new Setting(containerEl).setName("Developer").setHeading();
 
@@ -214,253 +180,5 @@ export class TimeTrackerSettingTab extends PluginSettingTab {
                     this.plugin.settings.debugMode = value;
                     await this.plugin.saveSettings();
                 }));
-    }
-
-    private renderClientsList(container: HTMLElement): void {
-        container.empty();
-
-        if (this.plugin.settings.clients.length === 0) {
-            container.createEl('p', {
-                text: 'No clients defined yet. Add a client to start tracking billable time.',
-                cls: 'setting-item-description'
-            });
-            return;
-        }
-
-        this.plugin.settings.clients.forEach((client, clientIndex) => {
-            const isExpanded = this.expandedClients.has(client.id);
-
-            // Client card container
-            const clientCard = container.createDiv('client-card');
-            if (client.archived) clientCard.addClass('is-archived');
-
-            // Client header row (clickable to expand)
-            const clientHeader = clientCard.createDiv('client-header');
-            clientHeader.addEventListener('click', () => {
-                if (isExpanded) {
-                    this.expandedClients.delete(client.id);
-                } else {
-                    this.expandedClients.add(client.id);
-                }
-                this.renderClientsList(container);
-            });
-
-            // Expand icon
-            const expandIcon = clientHeader.createSpan('client-expand-icon');
-            expandIcon.setText(isExpanded ? '▼' : '▶');
-
-            // Color dot
-            const colorDot = clientHeader.createSpan('client-color-dot');
-            colorDot.style.backgroundColor = client.color;
-
-            // Client name
-            clientHeader.createSpan({ text: client.name, cls: 'client-name' });
-
-            // Rate badge (always hourly)
-            const rateDisplay = `${client.currency} ${client.rate}/hr`;
-            clientHeader.createSpan({ text: rateDisplay, cls: 'client-rate-badge' });
-
-            // Edit button (stops propagation)
-            const editBtn = clientHeader.createEl('button', { cls: 'client-edit-btn' });
-            editBtn.setText('Edit');
-            editBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const modal = new ClientModal(
-                    this.app,
-                    { mode: 'edit', client },
-                    (updatedClient) => {
-                        this.plugin.settings.clients[clientIndex] = updatedClient;
-                        void this.plugin.saveSettings().then(() => {
-                            this.renderClientsList(container);
-                        });
-                    },
-                    () => {
-                        // Delete client - also delete orphaned projects/activities
-                        this.plugin.settings.projects = this.plugin.settings.projects.filter(
-                            p => p.clientId !== client.id
-                        );
-                        this.plugin.settings.activities = this.plugin.settings.activities.filter(
-                            a => a.clientId !== client.id
-                        );
-                        this.plugin.settings.clients.splice(clientIndex, 1);
-                        void this.plugin.saveSettings().then(() => {
-                            this.renderClientsList(container);
-                        });
-                    }
-                );
-                modal.open();
-            });
-
-            // Expanded content: Projects and Activities
-            if (isExpanded) {
-                const expandedContent = clientCard.createDiv('client-expanded');
-
-                // Projects section
-                const projectsSection = expandedContent.createDiv('client-section');
-                const projectsHeader = projectsSection.createDiv('client-section-header');
-                projectsHeader.createSpan({ text: 'Projects', cls: 'client-section-title' });
-
-                const addProjectBtn = projectsHeader.createEl('button', { text: 'Add', cls: 'client-add-btn' });
-                addProjectBtn.addEventListener('click', () => {
-                    const newProject: Project = {
-                        id: `project-${Date.now()}`,
-                        name: 'New project',
-                        color: this.getRandomColor(),
-                        archived: false,
-                        clientId: client.id,
-                    };
-                    this.plugin.settings.projects.push(newProject);
-                    void this.plugin.saveSettings().then(() => {
-                        this.renderClientsList(container);
-                    });
-                });
-
-                // List projects for this client
-                const clientProjects = this.plugin.settings.projects.filter(p => p.clientId === client.id);
-                if (clientProjects.length === 0) {
-                    projectsSection.createEl('p', { text: 'No projects yet', cls: 'client-empty-text' });
-                } else {
-                    const projectsList = projectsSection.createDiv('client-items-list');
-                    clientProjects.forEach((project, _projectIndex) => {
-                        const actualIndex = this.plugin.settings.projects.indexOf(project);
-                        this.renderProjectItem(projectsList, project, actualIndex, container);
-                    });
-                }
-
-                // Activities section
-                const activitiesSection = expandedContent.createDiv('client-section');
-                const activitiesHeader = activitiesSection.createDiv('client-section-header');
-                activitiesHeader.createSpan({ text: 'Activities', cls: 'client-section-title' });
-
-                const addActivityBtn = activitiesHeader.createEl('button', { text: 'Add', cls: 'client-add-btn' });
-                addActivityBtn.addEventListener('click', () => {
-                    const newActivity: Activity = {
-                        id: `activity-${Date.now()}`,
-                        name: 'New activity',
-                        color: this.getRandomColor(),
-                        clientId: client.id,
-                    };
-                    this.plugin.settings.activities.push(newActivity);
-                    void this.plugin.saveSettings().then(() => {
-                        this.renderClientsList(container);
-                    });
-                });
-
-                // List activities for this client
-                const clientActivities = this.plugin.settings.activities.filter(a => a.clientId === client.id);
-                if (clientActivities.length === 0) {
-                    activitiesSection.createEl('p', { text: 'No activities yet', cls: 'client-empty-text' });
-                } else {
-                    const activitiesList = activitiesSection.createDiv('client-items-list');
-                    clientActivities.forEach((activity) => {
-                        const actualIndex = this.plugin.settings.activities.indexOf(activity);
-                        this.renderActivityItem(activitiesList, activity, actualIndex, container);
-                    });
-                }
-            }
-        });
-    }
-
-    /**
-     * Render a single project item within a client
-     */
-    private renderProjectItem(container: HTMLElement, project: Project, index: number, parentContainer: HTMLElement): void {
-        const item = container.createDiv('client-item');
-        if (project.archived) item.addClass('is-archived');
-
-        // Color picker
-        const colorPicker = item.createEl('input', { type: 'color', cls: 'client-item-color' });
-        colorPicker.value = project.color;
-        colorPicker.addEventListener('change', () => {
-            project.color = colorPicker.value;
-            void this.plugin.saveSettings();
-        });
-
-        // Name input
-        const nameInput = item.createEl('input', { type: 'text', cls: 'client-item-name' });
-        nameInput.value = project.name;
-        nameInput.addEventListener('change', () => {
-            project.name = nameInput.value;
-            project.id = this.slugify(nameInput.value);
-            void this.plugin.saveSettings();
-        });
-
-        // Archive toggle
-        const archiveBtn = item.createEl('button', {
-            text: project.archived ? '↩' : '📦',
-            cls: 'client-item-btn',
-        });
-        archiveBtn.title = project.archived ? 'Unarchive' : 'Archive';
-        archiveBtn.addEventListener('click', () => {
-            project.archived = !project.archived;
-            void this.plugin.saveSettings().then(() => {
-                this.renderClientsList(parentContainer);
-            });
-        });
-
-        // Delete button
-        const deleteBtn = item.createEl('button', { text: '🗑', cls: 'client-item-btn' });
-        deleteBtn.title = 'Delete';
-        deleteBtn.addEventListener('click', () => {
-            this.plugin.settings.projects.splice(index, 1);
-            void this.plugin.saveSettings().then(() => {
-                this.renderClientsList(parentContainer);
-            });
-        });
-    }
-
-    /**
-     * Render a single activity item within a client
-     */
-    private renderActivityItem(container: HTMLElement, activity: Activity, index: number, parentContainer: HTMLElement): void {
-        const item = container.createDiv('client-item');
-
-        // Color picker
-        const colorPicker = item.createEl('input', { type: 'color', cls: 'client-item-color' });
-        colorPicker.value = activity.color;
-        colorPicker.addEventListener('change', () => {
-            activity.color = colorPicker.value;
-            void this.plugin.saveSettings();
-        });
-
-        // Name input
-        const nameInput = item.createEl('input', { type: 'text', cls: 'client-item-name' });
-        nameInput.value = activity.name;
-        nameInput.addEventListener('change', () => {
-            activity.name = nameInput.value;
-            activity.id = this.slugify(nameInput.value);
-            void this.plugin.saveSettings();
-        });
-
-        // Delete button
-        const deleteBtn = item.createEl('button', { text: '🗑', cls: 'client-item-btn' });
-        deleteBtn.title = 'Delete';
-        deleteBtn.addEventListener('click', () => {
-            this.plugin.settings.activities.splice(index, 1);
-            void this.plugin.saveSettings().then(() => {
-                this.renderClientsList(parentContainer);
-            });
-        });
-    }
-
-    private slugify(text: string): string {
-        return text
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/(^-|-$)/g, '');
-    }
-
-    private getRandomColor(): string {
-        const colors = [
-            '#4f46e5', // Indigo
-            '#059669', // Emerald
-            '#e11d48', // Rose
-            '#f59e0b', // Amber
-            '#8b5cf6', // Violet
-            '#06b6d4', // Cyan
-            '#84cc16', // Lime
-            '#f97316', // Orange
-        ];
-        return colors[Math.floor(Math.random() * colors.length)];
     }
 }

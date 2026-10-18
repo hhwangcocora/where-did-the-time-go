@@ -16,7 +16,7 @@ function setup(use24HourFormat = true) {
     } as unknown as DataManager;
     const modal = new EntryModal({} as App, { ...DEFAULT_SETTINGS, use24HourFormat }, dataManager,
         { mode: 'create', date: new Date(2026, 6, 23), startTime: '19:15', endTime: '20:46' }, () => {});
-    modal['clientValue'] = 'client';
+    modal['fieldValues'] = { activity_name: 'Testing Task', category: 'Deep Work' };
     const start = new TimeInput(doc.body, use24HourFormat, 'Start', '19:15', (value) => {
         modal['startTimeValue'] = value;
         modal['recalculateDuration']();

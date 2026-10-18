@@ -2,14 +2,18 @@ import { Plugin, WorkspaceLeaf, debounce } from 'obsidian';
 import { TimeTrackerSettings, DEFAULT_SETTINGS, VIEW_TYPE_TIMELINE, VIEW_TYPE_REPORTS } from './src/types';
 import { TimeTrackerSettingTab } from './src/settings';
 import { DataManager } from './src/data/DataManager';
+import { SchemaManager } from './src/data/SchemaManager';
 import { TimelineView } from './src/views/TimelineView';
 import { ReportsView } from './src/views/ReportsView';
 import { EntryModal } from './src/modals/EntryModal';
+import { DiaryModal } from './src/modals/DiaryModal';
+import { TableParser } from './src/data/TableParser';
 import { Logger } from './src/utils/Logger';
 
 export default class WhereDidTheTimeGoPlugin extends Plugin {
     settings: TimeTrackerSettings;
     dataManager: DataManager;
+    schemaManager: SchemaManager;
 
     async onload(): Promise<void> {
         Logger.debug('Loading Where Did The Time Go plugin');
@@ -20,8 +24,17 @@ export default class WhereDidTheTimeGoPlugin extends Plugin {
         // Initialize logger with debug mode from settings
         Logger.setDebugMode(this.settings.debugMode);
 
-        // Initialize data manager
-        this.dataManager = new DataManager(this.app.vault, this.settings);
+        // Initialize schema manager and load Schema.md
+        this.schemaManager = new SchemaManager(this.app.vault, this.settings);
+        await this.schemaManager.loadSchema();
+
+        // Ensure schema is reloaded once Obsidian workspace layout and vault indexing are ready
+        this.app.workspace.onLayoutReady(async () => {
+            await this.schemaManager.loadSchema();
+        });
+
+        // Initialize data manager with schema manager reference
+        this.dataManager = new DataManager(this.app.vault, this.settings, this.schemaManager);
 
         // Register the timeline view
         this.registerView(
@@ -72,17 +85,40 @@ export default class WhereDidTheTimeGoPlugin extends Plugin {
             },
         });
 
+        // Add command to open today's diary
+        this.addCommand({
+            id: 'open-today-diary',
+            name: "Open today's diary",
+            callback: () => {
+                const todayStr = TableParser.getDateString(new Date());
+                new DiaryModal(this.app, this.dataManager, todayStr).open();
+            },
+        });
+
         // Add settings tab
         this.addSettingTab(new TimeTrackerSettingTab(this.app, this));
 
         // Debounced refresh to avoid excessive updates during sync operations
         const debouncedRefresh = debounce(() => this.refreshTimelineViews(), 500, true);
 
+        // Debounced schema reload so typing in Schema.md updates views smoothly
+        const debouncedSchemaReload = debounce(async () => {
+            Logger.debug('Schema.md modified, reloading schema');
+            await this.schemaManager.loadSchema();
+            debouncedRefresh();
+        }, 1000, true);
+
         // Watch for file changes to invalidate cache
         this.registerEvent(
             this.app.vault.on('modify', (file) => {
                 if (file.path.startsWith(this.settings.timeTrackingFolder)) {
-                    // Invalidate cache for this file
+                    // Watch for Schema.md changes
+                    if (file.name === 'Schema.md') {
+                        debouncedSchemaReload();
+                        return;
+                    }
+
+                    // Invalidate cache for monthly time tracking files
                     const monthMatch = file.name.match(/^(\d{4}-\d{2})\.md$/);
                     if (monthMatch) {
                         this.dataManager.invalidateMonth(monthMatch[1]);
@@ -106,6 +142,10 @@ export default class WhereDidTheTimeGoPlugin extends Plugin {
         await this.saveData(this.settings);
         // Update logger debug mode
         Logger.setDebugMode(this.settings.debugMode);
+        // Update schema manager with new settings
+        if (this.schemaManager) {
+            this.schemaManager.updateSettings(this.settings);
+        }
         // Update data manager with new settings
         if (this.dataManager) {
             this.dataManager.updateSettings(this.settings);

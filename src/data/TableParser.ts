@@ -2,36 +2,30 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkStringify from 'remark-stringify';
-import type { Root, Table, TableRow, TableCell } from 'mdast';
-import type { TimeEntry, ParsedMonth } from '../types';
+import type { Root, Table, TableRow, TableCell, Heading } from 'mdast';
+import type { TimeEntry, MonthlyData, DailyDiary, TrackingSchemaConfig, FieldDefinition } from '../types';
+import { DEFAULT_SCHEMA_CONFIG } from '../types';
 import { Logger } from '../utils/Logger';
 
 /**
- * Parses and serializes time entries using markdown tables via mdast/remark
- *
- * Format (one table per month file):
- * | Start | End | Description | Client | Project | Activity | Notes |
- * |-------|-----|-------------|--------|---------|----------|-------|
- * | 2024-01-15 09:15 | 2024-01-15 10:40 | Work on feature | acme | proj1 | dev | [[note]] |
- *
- * Uses unified/remark for robust parsing that handles edge cases:
- * - Escaped pipes \|
- * - Pipes inside code spans
- * - Alignment markers
- * - Empty cells
+ * Parses and serializes monthly time tracking files using AST via mdast/remark.
+ * Supports:
+ * 1. Chronological activity tables with dynamic schema columns and unmapped legacy columns
+ * 2. ## Daily Diaries with ### YYYY-MM-DD free-text reflection sections
+ * 3. ## Monthly AI Summary (Phase 2 preserved section)
  */
 export class TableParser {
-    /** Expected column headers (case-insensitive matching) */
-    static readonly HEADERS = ['Start', 'End', 'Description', 'Client', 'Project', 'Activity', 'Notes'];
+    /** Default legacy column headers */
+    static readonly LEGACY_HEADERS = ['Start', 'End', 'Description', 'Client', 'Project', 'Activity', 'Notes'];
 
-    /** Create the unified processor for parsing */
+    /** Create unified processor for parsing */
     private static createParser() {
         return unified()
             .use(remarkParse)
             .use(remarkGfm);
     }
 
-    /** Create the unified processor for serializing */
+    /** Create unified processor for serializing */
     private static createSerializer() {
         return unified()
             .use(remarkParse)
@@ -45,43 +39,61 @@ export class TableParser {
     }
 
     /**
-     * Parse a monthly file content into entries
+     * Parse a monthly file content into MonthlyData (entries, diaries, summary)
      */
-    static parseMonthFile(content: string, monthStr: string): ParsedMonth {
+    static parseMonthFile(content: string, monthStr: string, schema?: TrackingSchemaConfig): MonthlyData {
         const entries: TimeEntry[] = [];
         const entriesByDate = new Map<string, TimeEntry[]>();
+        const diariesByDate = new Map<string, DailyDiary>();
+        let aiSummary: string | undefined;
+
+        if (!content || !content.trim()) {
+            return {
+                month: monthStr,
+                entries,
+                entriesByDate,
+                diariesByDate,
+                aiSummary,
+            };
+        }
 
         // Parse markdown to AST
         const processor = this.createParser();
-        const tree = processor.parse(content);
+        const tree = processor.parse(content) as Root;
 
-        // Find table nodes
+        // 1. Parse activity table
         for (const node of tree.children) {
             if (node.type === 'table') {
-                const tableEntries = this.parseTable(node);
+                const tableEntries = this.parseTable(node, schema);
                 for (const entry of tableEntries) {
                     entries.push(entry);
 
-                    // Group by date
                     if (!entriesByDate.has(entry.date)) {
                         entriesByDate.set(entry.date, []);
                     }
-                    entriesByDate.get(entry.date).push(entry);
+                    entriesByDate.get(entry.date)!.push(entry);
                 }
             }
         }
+
+        // 2. Parse Daily Diaries and Monthly Summary sections
+        this.parseSections(tree, content, diariesByDate, (summary) => {
+            aiSummary = summary;
+        });
 
         return {
             month: monthStr,
             entries,
             entriesByDate,
+            diariesByDate,
+            aiSummary,
         };
     }
 
     /**
-     * Parse a table node into TimeEntry array
+     * Parse table node into TimeEntry array with dynamic schema matching
      */
-    private static parseTable(table: Table): TimeEntry[] {
+    private static parseTable(table: Table, schema?: TrackingSchemaConfig): TimeEntry[] {
         const entries: TimeEntry[] = [];
         const rows = table.children;
 
@@ -89,102 +101,295 @@ export class TableParser {
             return entries; // Need at least header + one data row
         }
 
-        // Get header indices
         const headerRow = rows[0];
-        const headerMap = this.getHeaderMap(headerRow);
+        const headers: string[] = headerRow.children.map(cell => this.getCellText(cell).trim());
+        const hasClientCol = headers.some(h => h.toLowerCase() === 'client');
 
-        // Parse data rows (skip header)
-        for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            const entry = this.parseRow(row, headerMap, i);
-            if (entry) {
-                entries.push(entry);
+        // Map column indices
+        let startIndex = -1;
+        let endIndex = -1;
+        interface ColumnMapping {
+            index: number;
+            header: string;
+            field?: FieldDefinition;
+        }
+        const columnMappings: ColumnMapping[] = [];
+
+        for (let i = 0; i < headers.length; i++) {
+            const h = headers[i];
+            const norm = h.toLowerCase();
+
+            if (norm === 'start') {
+                startIndex = i;
+                continue;
             }
+            if (norm === 'end') {
+                endIndex = i;
+                continue;
+            }
+
+            let matchedField: FieldDefinition | undefined;
+            if (schema && schema.fields) {
+                // Exact id or label match first
+                matchedField = schema.fields.find(f =>
+                    f.id.toLowerCase() === norm || f.label.toLowerCase() === norm
+                );
+                if (!matchedField) {
+                    matchedField = schema.fields.find(f =>
+                        f.aliases && f.aliases.some(a => a.toLowerCase() === norm)
+                    );
+                }
+            } else {
+                // Fallback matching against default schema
+                matchedField = DEFAULT_SCHEMA_CONFIG.fields.find(f =>
+                    f.id.toLowerCase() === norm || f.label.toLowerCase() === norm
+                );
+                if (!matchedField) {
+                    matchedField = DEFAULT_SCHEMA_CONFIG.fields.find(f =>
+                        f.aliases && f.aliases.some(a => a.toLowerCase() === norm)
+                    );
+                }
+            }
+
+            columnMappings.push({
+                index: i,
+                header: h,
+                field: matchedField,
+            });
+        }
+
+        if (startIndex === -1 || endIndex === -1) {
+            Logger.log('TableParser: Table missing Start or End columns');
+            return entries;
+        }
+
+        // Parse data rows
+        for (let r = 1; r < rows.length; r++) {
+            const row = rows[r];
+            const cells = row.children;
+
+            const startStr = startIndex < cells.length ? this.getCellText(cells[startIndex]) : '';
+            const endStr = endIndex < cells.length ? this.getCellText(cells[endIndex]) : '';
+
+            if (!startStr || !endStr) {
+                continue;
+            }
+
+            const startDateTime = this.parseDateTime(startStr);
+            const endDateTime = this.parseDateTime(endStr);
+            if (!startDateTime || !endDateTime) {
+                continue;
+            }
+
+            const date = this.getDateString(startDateTime);
+            const start = this.formatTime(startDateTime);
+            const end = this.formatTime(endDateTime);
+            const durationMinutes = Math.round((endDateTime.getTime() - startDateTime.getTime()) / 60000);
+
+            const fields: Record<string, string | string[]> = {};
+            const unmappedFields: Record<string, string> = {};
+
+            let description = '';
+            let client = '';
+            let project: string | undefined;
+            let activity: string | undefined;
+            let linkedNote: string | undefined;
+
+            for (const col of columnMappings) {
+                const cellText = col.index < cells.length ? this.getCellText(cells[col.index]) : '';
+                const parsedVal = this.parseDescription(cellText);
+
+                if (col.field) {
+                    if (col.field.multiple) {
+                        fields[col.field.id] = parsedVal
+                            ? parsedVal.split(',').map(s => s.trim()).filter(Boolean)
+                            : [];
+                    } else {
+                        fields[col.field.id] = parsedVal;
+                    }
+
+                    // Map legacy helper properties
+                    if (col.field.id === 'activity_name' || col.field.aliases?.includes('description')) {
+                        description = parsedVal;
+                    }
+                    if (col.field.id === 'category' || col.field.aliases?.includes('activity')) {
+                        activity = parsedVal;
+                    }
+                    if (col.field.id === 'project') {
+                        project = parsedVal;
+                    }
+                    if (col.field.id === 'notes' || col.field.aliases?.includes('notes')) {
+                        const wikiMatch = parsedVal.match(/\[\[([^\]]+)\]\]/);
+                        linkedNote = wikiMatch ? wikiMatch[1] : (parsedVal || undefined);
+                    }
+                } else {
+                    unmappedFields[col.header] = parsedVal;
+
+                    const normHeader = col.header.toLowerCase();
+                    if (normHeader === 'client') {
+                        client = parsedVal;
+                    }
+                    if (normHeader === 'description' && !description) {
+                        description = parsedVal;
+                    }
+                    if (normHeader === 'project' && !project) {
+                        project = parsedVal;
+                    }
+                    if (normHeader === 'activity' && !activity) {
+                        activity = parsedVal;
+                    }
+                    if (normHeader === 'notes' && !linkedNote) {
+                        const wikiMatch = parsedVal.match(/\[\[([^\]]+)\]\]/);
+                        linkedNote = wikiMatch ? wikiMatch[1] : (parsedVal || undefined);
+                    }
+                }
+            }
+
+            if (!description) {
+                const titleFieldVal = fields['activity_name'] || fields['category'];
+                description = typeof titleFieldVal === 'string' ? titleFieldVal : (Array.isArray(titleFieldVal) ? titleFieldVal.join(', ') : '');
+            }
+
+            if (schema) {
+                let missingRequired = false;
+                for (const col of columnMappings) {
+                    if (col.field && col.field.required) {
+                        const val = fields[col.field.id];
+                        if (val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) {
+                            missingRequired = true;
+                            break;
+                        }
+                    }
+                }
+                if (missingRequired) continue;
+            } else if (hasClientCol && !client) {
+                continue;
+            }
+
+            entries.push({
+                date,
+                start,
+                end,
+                description,
+                client,
+                project,
+                activity,
+                linkedNote,
+                fields,
+                unmappedFields: Object.keys(unmappedFields).length > 0 ? unmappedFields : undefined,
+                startDateTime,
+                endDateTime,
+                lineNumber: r,
+                durationMinutes,
+            });
         }
 
         return entries;
     }
 
     /**
-     * Build a map of header name -> column index
+     * Parse ## Daily Diaries and ## Monthly AI Summary sections from markdown AST
      */
-    private static getHeaderMap(headerRow: TableRow): Map<string, number> {
-        const map = new Map<string, number>();
-        const cells = headerRow.children;
+    private static parseSections(
+        tree: Root,
+        content: string,
+        diariesByDate: Map<string, DailyDiary>,
+        onSummary: (summary: string) => void
+    ): void {
+        const children = tree.children;
 
-        for (let i = 0; i < cells.length; i++) {
-            const text = this.getCellText(cells[i]).toLowerCase();
-            map.set(text, i);
+        for (let i = 0; i < children.length; i++) {
+            const node = children[i];
+            if (node.type !== 'heading') continue;
+
+            const heading = node as Heading;
+            const headingText = this.getNodeText(heading).trim().toLowerCase();
+
+            // Detect ## Daily Diaries
+            if (heading.depth === 2 && headingText.includes('daily diar')) {
+                // Parse H3 children under Daily Diaries until the next H2 or end of file
+                for (let j = i + 1; j < children.length; j++) {
+                    const sibling = children[j];
+                    if (sibling.type === 'heading') {
+                        const sibHeading = sibling as Heading;
+                        if (sibHeading.depth <= 2) {
+                            // Reached next top-level section
+                            break;
+                        }
+                        if (sibHeading.depth === 3) {
+                            const dateStr = this.getNodeText(sibHeading).trim();
+                            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                                const diaryContent = this.extractSectionContent(children, j, content);
+                                diariesByDate.set(dateStr, {
+                                    date: dateStr,
+                                    content: diaryContent,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Detect ## Monthly AI Summary
+            if (heading.depth === 2 && (headingText.includes('summary') || headingText.includes('reflection'))) {
+                const summaryContent = this.extractSectionContent(children, i, content, 2);
+                if (summaryContent) {
+                    onSummary(summaryContent);
+                }
+            }
         }
-
-        return map;
     }
 
     /**
-     * Parse a table row into a TimeEntry
+     * Extract raw markdown content between an AST heading and the next heading of equal or higher depth
      */
-    private static parseRow(row: TableRow, headerMap: Map<string, number>, rowIndex: number): TimeEntry | null {
-        const cells = row.children;
+    private static extractSectionContent(
+        nodes: Root['children'],
+        headingIndex: number,
+        fullContent: string,
+        maxDepth?: number
+    ): string {
+        const headingNode = nodes[headingIndex] as Heading;
+        const targetDepth = maxDepth !== undefined ? maxDepth : headingNode.depth;
 
-        const getValue = (header: string): string => {
-            const index = headerMap.get(header.toLowerCase());
-            if (index === undefined || index >= cells.length) return '';
-            return this.getCellText(cells[index]);
-        };
-
-        const startStr = getValue('start');
-        const endStr = getValue('end');
-        const client = getValue('client');
-
-        // Must have start, end, and client
-        if (!startStr || !endStr || !client) {
-            Logger.log('TableParser: Missing required fields (start, end, or client)');
-            return null;
+        // Determine content start offset
+        let startOffset: number | undefined;
+        if (headingNode.position?.end?.offset !== undefined) {
+            startOffset = headingNode.position.end.offset;
         }
 
-        // Parse datetimes
-        const startDateTime = this.parseDateTime(startStr);
-        const endDateTime = this.parseDateTime(endStr);
-
-        if (!startDateTime || !endDateTime) {
-            Logger.log('TableParser: Invalid datetime format');
-            return null;
-        }
-
-        // Extract date from start datetime
-        const date = this.getDateString(startDateTime);
-
-        // Calculate duration
-        const durationMinutes = Math.round((endDateTime.getTime() - startDateTime.getTime()) / 60000);
-
-        // Extract time strings for display
-        const start = this.formatTime(startDateTime);
-        const end = this.formatTime(endDateTime);
-
-        // Parse linked note from notes column (extract [[...]])
-        const notes = getValue('notes');
-        let linkedNote: string | undefined;
-        if (notes) {
-            const wikiMatch = notes.match(/\[\[([^\]]+)\]\]/);
-            if (wikiMatch) {
-                linkedNote = wikiMatch[1];
+        // Determine content end offset (start of next relevant heading or end of file)
+        let endOffset: number | undefined;
+        for (let k = headingIndex + 1; k < nodes.length; k++) {
+            const nextNode = nodes[k];
+            if (nextNode.type === 'heading') {
+                const nextHeading = nextNode as Heading;
+                if (nextHeading.depth <= targetDepth) {
+                    if (nextHeading.position?.start?.offset !== undefined) {
+                        endOffset = nextHeading.position.start.offset;
+                    }
+                    break;
+                }
             }
         }
 
-        return {
-            date,
-            start,
-            end,
-            description: this.parseDescription(getValue('description')),
-            client,
-            project: getValue('project') || undefined,
-            activity: getValue('activity') || undefined,
-            linkedNote,
-            startDateTime,
-            endDateTime,
-            lineNumber: rowIndex, // Row index in table (not file line number)
-            durationMinutes,
-        };
+        if (startOffset !== undefined) {
+            const rawSlice = endOffset !== undefined
+                ? fullContent.substring(startOffset, endOffset)
+                : fullContent.substring(startOffset);
+            return rawSlice.trim();
+        }
+
+        // Fallback using node text serialization
+        const collectedTexts: string[] = [];
+        for (let k = headingIndex + 1; k < nodes.length; k++) {
+            const nextNode = nodes[k];
+            if (nextNode.type === 'heading' && (nextNode as Heading).depth <= targetDepth) {
+                break;
+            }
+            collectedTexts.push(this.getNodeText(nextNode));
+        }
+        return collectedTexts.join('\n\n').trim();
     }
 
     /**
@@ -198,7 +403,6 @@ export class TableParser {
             } else if (child.type === 'inlineCode') {
                 text += child.value;
             } else if ('children' in child) {
-                // Recursively get text from nested nodes
                 text += this.getNodeText(child);
             }
         }
@@ -271,13 +475,44 @@ export class TableParser {
     }
 
     /**
-     * Generate markdown table content from entries
+     * Generate markdown table content from entries with dynamic schema columns
      */
-    static generateTable(entries: TimeEntry[]): string {
-        // Sort entries by start time
+    static generateTable(entries: TimeEntry[], schema?: TrackingSchemaConfig): string {
+        // Sort entries chronologically by start time
         const sorted = [...entries].sort((a, b) =>
             a.startDateTime.getTime() - b.startDateTime.getTime()
         );
+
+        // Determine column headers
+        let headers: string[] = [];
+
+        if (schema && schema.fields && schema.fields.length > 0) {
+            headers = ['Start', 'End', ...schema.fields.map(f => f.label)];
+
+            // Retain any unmapped columns present in existing entries
+            const unmappedSeen = new Set<string>();
+            for (const entry of sorted) {
+                if (entry.unmappedFields) {
+                    for (const unmappedCol of Object.keys(entry.unmappedFields)) {
+                        if (!headers.some(h => h.toLowerCase() === unmappedCol.toLowerCase())) {
+                            unmappedSeen.add(unmappedCol);
+                        }
+                    }
+                }
+                if (entry.client && !headers.some(h => h.toLowerCase() === 'client')) {
+                    unmappedSeen.add('Client');
+                }
+            }
+            headers.push(...Array.from(unmappedSeen));
+        } else {
+            // Check if entries have client or legacy format
+            const hasClient = entries.some(e => Boolean(e.client));
+            if (hasClient) {
+                headers = [...this.LEGACY_HEADERS];
+            } else {
+                headers = ['Start', 'End', 'Category', 'Activity Name', 'Location', 'Tags', 'Notes'];
+            }
+        }
 
         // Build table AST
         const tableRows: TableRow[] = [];
@@ -285,7 +520,7 @@ export class TableParser {
         // Header row
         tableRows.push({
             type: 'tableRow',
-            children: this.HEADERS.map(h => ({
+            children: headers.map(h => ({
                 type: 'tableCell',
                 children: [{ type: 'text', value: h }],
             })) as TableCell[],
@@ -293,23 +528,72 @@ export class TableParser {
 
         // Data rows
         for (const entry of sorted) {
+            const rowCells: TableCell[] = [];
+
+            for (const h of headers) {
+                const norm = h.toLowerCase();
+
+                if (norm === 'start') {
+                    rowCells.push(this.createCell(this.formatDateTime(entry.startDateTime)));
+                    continue;
+                }
+                if (norm === 'end') {
+                    rowCells.push(this.createCell(this.formatDateTime(entry.endDateTime)));
+                    continue;
+                }
+
+                // Match with schema field
+                let matchedField: FieldDefinition | undefined;
+                if (schema && schema.fields) {
+                    matchedField = schema.fields.find(f =>
+                        f.id.toLowerCase() === norm ||
+                        f.label.toLowerCase() === norm ||
+                        (f.aliases && f.aliases.some(a => a.toLowerCase() === norm))
+                    );
+                }
+
+                if (matchedField) {
+                    let cellVal = '';
+                    const rawVal = entry.fields?.[matchedField.id];
+
+                    if (rawVal !== undefined && rawVal !== null) {
+                        cellVal = Array.isArray(rawVal) ? rawVal.join(', ') : String(rawVal);
+                    } else {
+                        // Fallback to legacy properties
+                        if (matchedField.id === 'activity_name') cellVal = entry.description || '';
+                        else if (matchedField.id === 'category') cellVal = entry.activity || '';
+                        else if (matchedField.id === 'project') cellVal = entry.project || '';
+                        else if (matchedField.id === 'notes') cellVal = entry.linkedNote ? `[[${entry.linkedNote}]]` : '';
+                    }
+
+                    if (matchedField.ui?.widget === 'note-link' && cellVal && !cellVal.startsWith('[[')) {
+                        cellVal = `[[${cellVal}]]`;
+                    }
+
+                    rowCells.push(this.createCell(this.serializeDescription(cellVal)));
+                } else {
+                    // Check unmapped or legacy properties
+                    let val = entry.unmappedFields?.[h] || '';
+                    if (!val) {
+                        if (norm === 'client') val = entry.client || '';
+                        else if (norm === 'description') val = entry.description || '';
+                        else if (norm === 'project') val = entry.project || '';
+                        else if (norm === 'activity') val = entry.activity || '';
+                        else if (norm === 'notes') val = entry.linkedNote ? `[[${entry.linkedNote}]]` : '';
+                    }
+                    rowCells.push(this.createCell(this.serializeDescription(val)));
+                }
+            }
+
             tableRows.push({
                 type: 'tableRow',
-                children: [
-                    this.createCell(this.formatDateTime(entry.startDateTime)),
-                    this.createCell(this.formatDateTime(entry.endDateTime)),
-                    this.createCell(this.serializeDescription(entry.description)),
-                    this.createCell(entry.client),
-                    this.createCell(entry.project || ''),
-                    this.createCell(entry.activity || ''),
-                    this.createCell(entry.linkedNote ? `[[${entry.linkedNote}]]` : ''),
-                ] as TableCell[],
+                children: rowCells,
             });
         }
 
         const table: Table = {
             type: 'table',
-            align: ['left', 'left', 'left', 'left', 'left', 'left', 'left'],
+            align: headers.map(() => 'left'),
             children: tableRows,
         };
 
@@ -318,7 +602,6 @@ export class TableParser {
             children: [table],
         };
 
-        // Serialize to markdown
         const processor = this.createSerializer();
         let result = processor.stringify(root);
 
@@ -353,19 +636,55 @@ export class TableParser {
     }
 
     /**
-     * Generate a complete month file with header and table
-     * @param entries - Time entries for the month
-     * @param monthStr - Month string (YYYY-MM)
-     * @param hideTable - If true, wrap table in %% comments to hide in reading view
+     * Generate complete month file with header, dynamic table, daily diaries, and AI summary
      */
-    static generateMonthFile(entries: TimeEntry[], monthStr: string, hideTable: boolean = true): string {
-        const header = this.getFileHeader();
-        const table = this.generateTable(entries);
-        if (hideTable) {
-            return `${header}\n# ${monthStr}\n\n%%\n${table}%%\n`;
+    static generateMonthFile(
+        entries: TimeEntry[],
+        monthStr: string,
+        schemaOrHideTable?: TrackingSchemaConfig | boolean,
+        diaries?: Map<string, DailyDiary> | DailyDiary[],
+        aiSummary?: string,
+        hideTable: boolean = true
+    ): string {
+        let schema: TrackingSchemaConfig | undefined;
+        let effectiveHideTable = hideTable;
+
+        if (typeof schemaOrHideTable === 'boolean') {
+            effectiveHideTable = schemaOrHideTable;
+            schema = undefined;
         } else {
-            return `${header}\n# ${monthStr}\n\n${table}`;
+            schema = schemaOrHideTable;
         }
+
+        const header = this.getFileHeader();
+        const table = this.generateTable(entries, schema);
+
+        const tableContent = effectiveHideTable ? `%%\n${table}%%\n` : `${table}\n`;
+
+        // Format Daily Diaries
+        let diarySection = '';
+        const diaryList: DailyDiary[] = diaries instanceof Map
+            ? Array.from(diaries.values())
+            : Array.isArray(diaries) ? diaries : [];
+
+        if (diaryList.length > 0) {
+            const sortedDiaries = [...diaryList]
+                .filter(d => Boolean(d.date))
+                .sort((a, b) => a.date.localeCompare(b.date));
+
+            if (sortedDiaries.length > 0) {
+                diarySection = `\n## Daily Diaries\n\n` +
+                    sortedDiaries.map(d => `### ${d.date}\n${d.content.trim()}`).join('\n\n') + '\n';
+            }
+        }
+
+        // Format AI Summary
+        let summarySection = '';
+        if (aiSummary && aiSummary.trim()) {
+            summarySection = `\n## Monthly AI Summary\n\n${aiSummary.trim()}\n`;
+        }
+
+        return `${header}\n# ${monthStr}\n\n${tableContent}${diarySection}${summarySection}`.trimEnd() + '\n';
     }
 
     /**
@@ -373,25 +692,9 @@ export class TableParser {
      */
     static getFileHeader(): string {
         return `%%
-⚠️ WARNING: This file is managed by the "Where Did The Time Go" plugin.
-Do not edit manually - your changes may be overwritten.
+⚠️ WARNING: This file is managed by the Personal Time Tracking plugin.
+Do not edit activities manually - your changes may be overwritten.
 Use the Timeline view to create, edit, or delete entries.
-
-FILE STRUCTURE:
-- One file per month, named YYYY-MM.md
-- Single table containing all entries for the month
-- Entries sorted chronologically by start time
-
-TABLE COLUMNS:
-| Start | End | Description | Client | Project | Activity | Notes |
-- Start (required): Start date and time (YYYY-MM-DD HH:mm)
-- End (required): End date and time (may be next day for overnight entries)
-- Description: Free text describing the activity
-- Client (required): Client for billing
-- Project (optional): Project name
-- Activity (optional): Work type classification
-- Notes (optional): Obsidian wikilink [[linked note]]
-%%
-`;
+%%`;
     }
 }
