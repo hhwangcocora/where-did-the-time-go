@@ -316,7 +316,7 @@ export interface TimeTrackerSettings {
  */
 export const DEFAULT_SETTINGS: TimeTrackerSettings = {
     timeTrackingFolder: 'TimeTracking',
-    hourHeight: 200,
+    hourHeight: 100,
     dayStartHour: 6,
     dayEndHour: 22,
     use24HourFormat: true,

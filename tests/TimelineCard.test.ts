@@ -268,10 +268,28 @@ describe('TimelineView Dynamic Card Helpers', () => {
             expect(card).toBeDefined();
             expect(card.classList.contains('entry-sleep')).toBe(false);
             expect(card.classList.contains('entry-sleep-collapsed')).toBe(false);
-            // 480 mins at default 200px/hr = 8 * 200 = 1600px
-            expect(parseFloat(card.style.height)).toBe(1600);
+            // 480 mins at default 100px/hr = 8 * 100 = 800px
+            expect(parseFloat(card.style.height)).toBe(800);
             expect(card.querySelector('.entry-sleep-tag')).toBeNull();
             expect(card.querySelector('.entry-icon-toggle')).toBeNull();
+        });
+
+        it('renders 15-minute entries with proportional 25px height at 100px/hr', () => {
+            const shortEntry = createSampleEntry({
+                start: '09:00',
+                end: '09:15',
+                durationMinutes: 15,
+                fields: { category: 'Deep Work', activity_name: 'Quick Standup' },
+            });
+
+            const container = document.createElement('div');
+            (view as any).entriesContainer = container;
+            (view as any).renderEntryCard(shortEntry, 0);
+
+            const card = container.querySelector('.timeline-entry-card') as HTMLElement;
+            expect(card).toBeDefined();
+            expect(card.classList.contains('entry-15m')).toBe(true);
+            expect(parseFloat(card.style.height)).toBe(25);
         });
     });
 
@@ -281,8 +299,8 @@ describe('TimelineView Dynamic Card Helpers', () => {
             Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
             (view as any).timelineContainer = container;
             (view as any).visibleDaysBuffer = 3;
-            (view as any).dayHeight = 24 * 200;
-            (view as any).settings.hourHeight = 200;
+            (view as any).dayHeight = 24 * 100;
+            (view as any).settings.hourHeight = 100;
 
             (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
             (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
@@ -291,8 +309,8 @@ describe('TimelineView Dynamic Card Helpers', () => {
             view.scrollToToday();
             await new Promise(resolve => setTimeout(resolve, 0));
 
-            // targetScroll = (3 * 4800 + 10 * 200) - (600 / 2) = 14400 + 2000 - 300 = 16100
-            expect(container.scrollTop).toBe(16100);
+            // targetScroll = (3 * 2400 + 10 * 100) - (600 / 2) = 7200 + 1000 - 300 = 7900
+            expect(container.scrollTop).toBe(7900);
         });
 
         it('scrollToDate positions dayStartHour at the top when centerHour is not provided', async () => {
@@ -300,8 +318,8 @@ describe('TimelineView Dynamic Card Helpers', () => {
             Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
             (view as any).timelineContainer = container;
             (view as any).visibleDaysBuffer = 3;
-            (view as any).dayHeight = 24 * 200;
-            (view as any).settings.hourHeight = 200;
+            (view as any).dayHeight = 24 * 100;
+            (view as any).settings.hourHeight = 100;
             (view as any).settings.dayStartHour = 6;
 
             (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
@@ -311,8 +329,8 @@ describe('TimelineView Dynamic Card Helpers', () => {
             view.scrollToDate(new Date(2026, 9, 18));
             await new Promise(resolve => setTimeout(resolve, 0));
 
-            // targetOffset = 3 * 4800 + 6 * 200 = 14400 + 1200 = 15600
-            expect(container.scrollTop).toBe(15600);
+            // targetOffset = 3 * 2400 + 6 * 100 = 7200 + 600 = 7800
+            expect(container.scrollTop).toBe(7800);
         });
     });
 });

@@ -98,7 +98,7 @@ export class TimeTrackerSettingTab extends PluginSettingTab {
             .setName('Hour height')
             .setDesc('Height in pixels for each hour in the timeline view')
             .addSlider(slider => slider
-                .setLimits(200, 240, 10)
+                .setLimits(50, 240, 10)
                 .setValue(this.plugin.settings.hourHeight)
                 .setDynamicTooltip()
                 .onChange(async (value) => {

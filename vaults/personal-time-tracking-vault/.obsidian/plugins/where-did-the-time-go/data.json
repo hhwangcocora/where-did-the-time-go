@@ -1,6 +1,6 @@
 {
   "timeTrackingFolder": "TimeTracking",
-  "hourHeight": 200,
+  "hourHeight": 100,
   "dayStartHour": 6,
   "dayEndHour": 22,
   "use24HourFormat": true,

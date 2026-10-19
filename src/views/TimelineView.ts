@@ -113,6 +113,9 @@ export class TimelineView extends ItemView {
     updateSettings(settings: TimeTrackerSettings): void {
         this.settings = settings;
         this.dayHeight = 24 * this.settings.hourHeight;
+        if (this.entriesContainer) {
+            this.entriesContainer.style.setProperty('--tt-hour-height', `${this.settings.hourHeight}px`);
+        }
         // Use refresh() to preserve scroll position (if already rendered)
         if (this.timelineContainer) {
             void this.refresh();
@@ -602,14 +605,15 @@ export class TimelineView extends ItemView {
 
     /**
      * Render an entry card with v5 design: Header + Body + Footer
-     * Design spec: 200px/hr, responsive by duration (15m/30m/45m/60m+)
+     * Design spec: responsive by duration (15m/30m/45m/60m+)
      */
     private renderEntryCard(entry: TimeEntry, dayTopOffset: number): void {
         const cardStartMinutes = entry.startDateTime.getHours() * 60 + entry.startDateTime.getMinutes();
         const totalDurationMinutes = entry.durationMinutes;
 
         const top = dayTopOffset + (cardStartMinutes / 60) * this.settings.hourHeight;
-        const height = Math.max((totalDurationMinutes / 60) * this.settings.hourHeight, 50);
+        const minHeight = Math.max(16, (15 / 60) * this.settings.hourHeight);
+        const height = Math.max((totalDurationMinutes / 60) * this.settings.hourHeight, minHeight);
 
         const card = this.entriesContainer.createDiv('timeline-entry-card');
         card.style.top = `${top}px`;
@@ -846,14 +850,16 @@ export class TimelineView extends ItemView {
             // Resize from top - adjust both top and height
             const newTop = this.entryDragOriginalTop + deltaY;
             const newHeight = this.entryDragOriginalHeight - deltaY;
-            if (newHeight >= 30) { // Minimum height
+            const minHeight = Math.max(16, (15 / 60) * this.settings.hourHeight);
+            if (newHeight >= minHeight) { // Minimum height
                 this.entryDragCard.style.top = `${newTop}px`;
                 this.entryDragCard.style.height = `${newHeight}px`;
             }
         } else if (this.entryDragMode === 'resize-bottom') {
             // Resize from bottom - just adjust height
             const newHeight = this.entryDragOriginalHeight + deltaY;
-            if (newHeight >= 30) { // Minimum height
+            const minHeight = Math.max(16, (15 / 60) * this.settings.hourHeight);
+            if (newHeight >= minHeight) { // Minimum height
                 this.entryDragCard.style.height = `${newHeight}px`;
             }
         }

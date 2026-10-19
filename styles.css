@@ -171,14 +171,14 @@
     position: relative;
     margin-left: 8px;
     margin-right: 16px;
-    /* 15-minute grid lines via CSS gradient - no extra DOM elements */
-    --quarter-height: calc(var(--tt-hour-height, 60px) / 4);
+    /* 50% (half-hour) grid lines via CSS gradient - no extra DOM elements */
+    --half-hour-height: calc(var(--tt-hour-height, 100px) / 2);
     background-image: repeating-linear-gradient(to bottom,
             transparent 0px,
-            transparent calc(var(--quarter-height) - 1px),
-            color-mix(in srgb, var(--tt-border) 40%, transparent) calc(var(--quarter-height) - 1px),
-            color-mix(in srgb, var(--tt-border) 40%, transparent) var(--quarter-height));
-    background-size: 100% var(--quarter-height);
+            transparent calc(var(--half-hour-height) - 1px),
+            color-mix(in srgb, var(--tt-border) 40%, transparent) calc(var(--half-hour-height) - 1px),
+            color-mix(in srgb, var(--tt-border) 40%, transparent) var(--half-hour-height));
+    background-size: 100% var(--half-hour-height);
 }
 
 /* Hour lines */
@@ -458,12 +458,71 @@
     height: 100%;
     min-height: 0;
     background: transparent;
-    padding: 0 10px 0 14px;
+    padding: 0 8px 0 12px;
+}
+
+.timeline-entry-card.entry-15m .entry-time-text {
+    font-size: 11px;
+}
+
+.timeline-entry-card.entry-15m .entry-duration-badge {
+    font-size: 9px;
+    padding: 1px 6px;
+}
+
+.timeline-entry-card.entry-15m .entry-header-icons svg {
+    width: 12px;
+    height: 12px;
 }
 
 .timeline-entry-card.entry-15m .entry-card-body,
 .timeline-entry-card.entry-15m .entry-card-footer {
     display: none;
+}
+
+/* 30m Compact Layout */
+.timeline-entry-card.entry-30m .entry-card-header {
+    min-height: 18px;
+    padding: 2px 8px 1px 12px;
+    gap: 6px;
+}
+
+.timeline-entry-card.entry-30m .entry-time-text {
+    font-size: 11px;
+}
+
+.timeline-entry-card.entry-30m .entry-duration-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+}
+
+.timeline-entry-card.entry-30m .entry-header-icons svg {
+    width: 12px;
+    height: 12px;
+}
+
+.timeline-entry-card.entry-30m .entry-card-body {
+    padding: 1px 8px 1px 12px;
+}
+
+.timeline-entry-card.entry-30m .entry-body-desc {
+    font-size: 11px;
+    line-height: 1.2;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+}
+
+.timeline-entry-card.entry-30m .entry-body-notes {
+    display: none;
+}
+
+.timeline-entry-card.entry-30m .entry-card-footer {
+    min-height: 16px;
+}
+
+.timeline-entry-card.entry-30m .powerline-seg {
+    padding: 2px 10px 2px 14px;
+    font-size: 9px;
 }
 
 /* Tiny tags container (15m only) */

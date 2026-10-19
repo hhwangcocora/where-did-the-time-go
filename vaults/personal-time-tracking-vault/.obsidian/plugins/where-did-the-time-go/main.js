@@ -282,7 +282,7 @@ var DEFAULT_SCHEMA_CONFIG = {
 };
 var DEFAULT_SETTINGS = {
   timeTrackingFolder: "TimeTracking",
-  hourHeight: 200,
+  hourHeight: 100,
   dayStartHour: 6,
   dayEndHour: 22,
   use24HourFormat: true,
@@ -347,7 +347,7 @@ var TimeTrackerSettingTab = class extends import_obsidian.PluginSettingTab {
       }
     }));
     new import_obsidian.Setting(containerEl).setName("Timeline display").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Hour height").setDesc("Height in pixels for each hour in the timeline view").addSlider((slider) => slider.setLimits(200, 240, 10).setValue(this.plugin.settings.hourHeight).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Hour height").setDesc("Height in pixels for each hour in the timeline view").addSlider((slider) => slider.setLimits(50, 240, 10).setValue(this.plugin.settings.hourHeight).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.hourHeight = value;
       await this.plugin.saveSettings();
     }));
@@ -13918,6 +13918,9 @@ var TimelineView = class extends import_obsidian6.ItemView {
   updateSettings(settings) {
     this.settings = settings;
     this.dayHeight = 24 * this.settings.hourHeight;
+    if (this.entriesContainer) {
+      this.entriesContainer.style.setProperty("--tt-hour-height", `${this.settings.hourHeight}px`);
+    }
     if (this.timelineContainer) {
       void this.refresh();
     }
@@ -14273,14 +14276,15 @@ var TimelineView = class extends import_obsidian6.ItemView {
   }
   /**
    * Render an entry card with v5 design: Header + Body + Footer
-   * Design spec: 200px/hr, responsive by duration (15m/30m/45m/60m+)
+   * Design spec: responsive by duration (15m/30m/45m/60m+)
    */
   renderEntryCard(entry, dayTopOffset) {
     var _a;
     const cardStartMinutes = entry.startDateTime.getHours() * 60 + entry.startDateTime.getMinutes();
     const totalDurationMinutes = entry.durationMinutes;
     const top = dayTopOffset + cardStartMinutes / 60 * this.settings.hourHeight;
-    const height = Math.max(totalDurationMinutes / 60 * this.settings.hourHeight, 50);
+    const minHeight = Math.max(16, 15 / 60 * this.settings.hourHeight);
+    const height = Math.max(totalDurationMinutes / 60 * this.settings.hourHeight, minHeight);
     const card = this.entriesContainer.createDiv("timeline-entry-card");
     card.style.top = `${top}px`;
     card.style.height = `${height}px`;
@@ -14458,13 +14462,15 @@ var TimelineView = class extends import_obsidian6.ItemView {
     } else if (this.entryDragMode === "resize-top") {
       const newTop = this.entryDragOriginalTop + deltaY;
       const newHeight = this.entryDragOriginalHeight - deltaY;
-      if (newHeight >= 30) {
+      const minHeight = Math.max(16, 15 / 60 * this.settings.hourHeight);
+      if (newHeight >= minHeight) {
         this.entryDragCard.style.top = `${newTop}px`;
         this.entryDragCard.style.height = `${newHeight}px`;
       }
     } else if (this.entryDragMode === "resize-bottom") {
       const newHeight = this.entryDragOriginalHeight + deltaY;
-      if (newHeight >= 30) {
+      const minHeight = Math.max(16, 15 / 60 * this.settings.hourHeight);
+      if (newHeight >= minHeight) {
         this.entryDragCard.style.height = `${newHeight}px`;
       }
     }
