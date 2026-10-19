@@ -16017,7 +16017,7 @@ var ReportsView = class extends import_obsidian8.ItemView {
   }
   /**
    * Render the summary KPI section
-   * Omits total billing hours and highlights category focus
+   * Highlights category focus and time allocation
    */
   renderSummary(start, end) {
     this.summaryContainer.empty();
@@ -16162,11 +16162,11 @@ var ReportsView = class extends import_obsidian8.ItemView {
     this.downloadCSV(csv, filename);
   }
   /**
-   * Generate CSV content with dynamic schema fields (without client)
+   * Generate CSV content with dynamic schema fields
    */
   generateCSV(entries) {
     const schema = this.dataManager.getSchema();
-    const exportFields = schema.fields.filter((f) => f.id.toLowerCase() !== "client");
+    const exportFields = schema.fields;
     const headers = ["Start", "End", "Duration", ...exportFields.map((f) => f.label)];
     const sorted = [...entries].sort(
       (a, b) => a.startDateTime.getTime() - b.startDateTime.getTime()
@@ -16224,11 +16224,11 @@ var ReportsView = class extends import_obsidian8.ItemView {
     this.downloadJSON(json, filename);
   }
   /**
-   * Generate JSON content from time entries (without client)
+   * Generate JSON content from time entries
    */
   generateJSON(entries, start, end) {
     const schema = this.dataManager.getSchema();
-    const exportFields = schema.fields.filter((f) => f.id.toLowerCase() !== "client");
+    const exportFields = schema.fields;
     const sorted = [...entries].sort(
       (a, b) => a.startDateTime.getTime() - b.startDateTime.getTime()
     );

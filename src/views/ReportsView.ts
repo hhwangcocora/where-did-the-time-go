@@ -347,7 +347,7 @@ export class ReportsView extends ItemView {
 
     /**
      * Render the summary KPI section
-     * Omits total billing hours and highlights category focus
+     * Highlights category focus and time allocation
      */
     private renderSummary(start: Date, end: Date): void {
         this.summaryContainer.empty();
@@ -542,11 +542,11 @@ export class ReportsView extends ItemView {
     }
 
     /**
-     * Generate CSV content with dynamic schema fields (without client)
+     * Generate CSV content with dynamic schema fields
      */
     private generateCSV(entries: TimeEntry[]): string {
         const schema = this.dataManager.getSchema();
-        const exportFields = schema.fields.filter(f => f.id.toLowerCase() !== 'client');
+        const exportFields = schema.fields;
         const headers = ['Start', 'End', 'Duration', ...exportFields.map(f => f.label)];
 
         const sorted = [...entries].sort((a, b) =>
@@ -620,11 +620,11 @@ export class ReportsView extends ItemView {
     }
 
     /**
-     * Generate JSON content from time entries (without client)
+     * Generate JSON content from time entries
      */
     private generateJSON(entries: TimeEntry[], start: Date, end: Date): string {
         const schema = this.dataManager.getSchema();
-        const exportFields = schema.fields.filter(f => f.id.toLowerCase() !== 'client');
+        const exportFields = schema.fields;
         const sorted = [...entries].sort((a, b) =>
             a.startDateTime.getTime() - b.startDateTime.getTime()
         );

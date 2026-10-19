@@ -10,7 +10,7 @@
  *   --interval=N        Appointment interval in minutes (default: 15)
  *   --start-hour=N      Start hour of day, 0-23 (default: 0 for 24h, or 7 for partial)
  *   --end-hour=N        End hour of day, 0-23 (default: 24 for full day, or 21 for partial)
- *   --output=PATH       Output directory (default: uses OBSIDIAN_TEST_VAULT env or prompts)
+ *   --output=PATH       Output directory (default: uses OBSIDIAN_TEST_VAULT env or test vault)
  *
  * Examples:
  *   node scripts/generate-stress-test.js --month=2026-03 --interval=10
@@ -34,9 +34,9 @@ const month = args.month || defaultMonth;
 const interval = parseInt(args.interval) || 15;
 const startHour = parseInt(args['start-hour']) ?? 0;
 const endHour = parseInt(args['end-hour']) ?? 24;
-const outputDir = args.output || process.env.OBSIDIAN_TEST_VAULT
+const outputDir = args.output || (process.env.OBSIDIAN_TEST_VAULT
     ? path.join(process.env.OBSIDIAN_TEST_VAULT, 'TimeTracking')
-    : '/Users/plattnum/Obsidian-Vaults/plugin-dev-vault/TimeTracking';
+    : path.join(process.cwd(), 'vaults/personal-time-tracking-vault/TimeTracking'));
 
 // Validate month format
 if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -73,40 +73,40 @@ FILE STRUCTURE:
 - Entries sorted chronologically by start time
 
 TABLE COLUMNS:
-| Start | End | Description | Client | Project | Activity | Notes |
+| Start | End | Category | Activity Name | Location | Tags | Notes | With Who |
 - Start (required): Start date and time (YYYY-MM-DD HH:mm)
 - End (required): End date and time (may be next day for overnight entries)
-- Description: Free text describing the activity
-- Client (required): Client for billing
-- Project (optional): Project name
-- Activity (optional): Work type classification
+- Category (required): Tracking category
+- Activity Name (required): Activity description
+- Location (optional): Place / location
+- Tags (optional): Comma-separated tags
 - Notes (optional): Obsidian wikilink [[linked note]]
+- With Who (optional): People / collaborators
 %%
 `;
 
 // Test data
-const clients = ['acme', 'globex', 'initech', 'umbrella', 'wayne'];
-const projects = ['alpha', 'beta', 'gamma', 'delta', ''];
-const activities = ['dev', 'meeting', 'review', 'planning', 'support'];
-const descriptions = [
-    'Sprint planning session',
-    'Code review for feature branch',
-    'Bug fix investigation',
-    'API integration work',
-    'Database optimization',
-    'Frontend component development',
-    'Backend service refactoring',
-    'Documentation update',
-    'Team standup',
-    'Client demo preparation',
-    'Performance testing',
-    'Security audit review',
+const categories = ['Deep Work', 'Shallow Work', 'Fitness', 'Learning', 'Personal', 'Chores', 'Entertainment'];
+const activities = [
+    'Coding',
+    'Architecture',
+    'Code Review',
+    'Debugging',
+    'Reading',
+    'Running',
+    'Cooking',
+    'Gaming',
+    'Planning',
+    'Writing',
 ];
+const locations = ['Home Office', 'Coffee Shop', 'Gym', 'Transit', ''];
+const tagsList = ['focus', 'routine', 'deep-dive', 'quick', ''];
+const withWhoList = ['Bob', 'Alice', 'Joan', 'Cindy', ''];
 
 // Generate table rows
 let rows = [];
-rows.push('| Start | End | Description | Client | Project | Activity | Notes |');
-rows.push('| ----- | --- | ----------- | ------ | ------- | -------- | ----- |');
+rows.push('| Start | End | Category | Activity Name | Location | Tags | Notes | With Who |');
+rows.push('| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |');
 
 for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = `${month}-${day.toString().padStart(2, '0')}`;
@@ -123,12 +123,13 @@ for (let day = 1; day <= daysInMonth; day++) {
         const start = `${dateStr} ${startH.toString().padStart(2, '0')}:${startM.toString().padStart(2, '0')}`;
         const end = `${dateStr} ${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 
-        const client = clients[(day + slot) % clients.length];
-        const project = projects[(day + slot) % projects.length];
-        const activity = activities[(day + slot) % activities.length];
-        const desc = descriptions[(day + slot) % descriptions.length];
+        const category = categories[(day + slot) % categories.length];
+        const activity = activities[(day + slot * 2) % activities.length];
+        const location = locations[(day + slot) % locations.length];
+        const tag = tagsList[(day + slot) % tagsList.length];
+        const withWho = withWhoList[(day + slot) % withWhoList.length];
 
-        rows.push(`| ${start} | ${end} | ${desc} | ${client} | ${project} | ${activity} | |`);
+        rows.push(`| ${start} | ${end} | ${category} | ${activity} | ${location} | ${tag} | | ${withWho} |`);
     }
 }
 

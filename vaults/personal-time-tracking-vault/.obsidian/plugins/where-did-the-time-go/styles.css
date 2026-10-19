@@ -214,7 +214,7 @@
     box-sizing: border-box;
 }
 
-/* Left Color Bar (4px, client color) */
+/* Left Color Bar (4px, category color) */
 .timeline-entry-card::before {
     content: '';
     position: absolute;
@@ -1866,34 +1866,6 @@
     font-weight: 500;
 }
 
-/* ========================================
-   Client-related Styles
-   ======================================== */
-
-/* Client modal */
-.client-modal {
-    max-width: 500px;
-}
-
-.client-modal h2 {
-    margin-top: 0;
-    margin-bottom: 16px;
-}
-
-.client-modal h3 {
-    margin-top: 24px;
-    margin-bottom: 12px;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-muted);
-}
-
-.client-modal textarea {
-    width: 100%;
-    min-height: 60px;
-    resize: vertical;
-}
-
 .modal-button-row {
     display: flex;
     justify-content: flex-end;
@@ -1905,49 +1877,6 @@
 
 .modal-button-row .button-spacer {
     flex-grow: 1;
-}
-
-/* Invoice modal */
-.invoice-modal {
-    max-width: 500px;
-}
-
-.invoice-modal h2 {
-    margin-top: 0;
-    margin-bottom: 16px;
-}
-
-.invoice-client-info {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 12px;
-    margin-bottom: 16px;
-    background: var(--background-secondary);
-    border-radius: 6px;
-    font-size: 14px;
-}
-
-.invoice-client-info strong {
-    color: var(--text-normal);
-}
-
-.invoice-period,
-.invoice-amount {
-    color: var(--text-muted);
-}
-
-.invoice-amount {
-    font-family: var(--font-monospace);
-}
-
-.invoice-due-date {
-    padding: 8px 12px;
-    background: var(--background-secondary);
-    border-radius: 4px;
-    font-family: var(--font-monospace);
-    color: var(--text-normal);
 }
 
 /* ========================================
