@@ -81,14 +81,13 @@ export class TimelineView extends ItemView {
         this.centerDate = new Date();
         this.centerDate.setHours(0, 0, 0, 0);
         await this.render();
-        // Scroll to show today centering 10:00 AM vertically
+        // Scroll to show today with 9:00 AM at the top of the viewport
         requestAnimationFrame(() => {
-            const viewportHeight = this.timelineContainer.clientHeight;
-            const hourOffset = this.visibleDaysBuffer * this.dayHeight + 10 * this.settings.hourHeight;
-            const targetOffset = hourOffset - (viewportHeight / 2);
-            this.timelineContainer.scrollTop = Math.max(0, targetOffset);
+            const topHour = 9;
+            const targetOffset = this.visibleDaysBuffer * this.dayHeight + topHour * this.settings.hourHeight;
+            this.timelineContainer.scrollTop = targetOffset;
             this.updateVisibleDateLabel();
-            Logger.log('onOpen: scrolled to today (10am centered), offset=', targetOffset);
+            Logger.log('onOpen: scrolled to today (9am at top), offset=', targetOffset);
         });
     }
 
@@ -659,56 +658,101 @@ export class TimelineView extends ItemView {
         const durationBadge = header.createSpan('entry-duration-badge');
         durationBadge.setText(this.formatDuration(entry.durationMinutes));
 
-        // 15m layout: Tiny tags inline in header (Location only)
+        // 15m layout: Compact inline details (Category, Location, Activity Name)
         if (is15m) {
-            const tinyTags = header.createDiv('entry-tiny-tags');
-            const badges = this.getEntryBadges(entry);
+            const compactDetails = header.createDiv('entry-compact-details');
 
-            if (badges.length > 0) {
-                const tag = tinyTags.createSpan('tiny-tag');
-                if (badges[0].isLocation) {
-                    tag.addClass('tiny-tag-location');
-                }
-                tag.setText(badges[0].text.substring(0, 3).toUpperCase());
-                tag.style.setProperty('--tag-color', badges[0].color);
+            // 1. Category (full name)
+            const cat = this.getEntryCategory(entry);
+            if (cat && cat.text) {
+                const catSpan = compactDetails.createSpan('entry-compact-category');
+                catSpan.setText(cat.text);
+                catSpan.setAttribute('title', cat.text);
+                catSpan.style.setProperty('--badge-color', cat.color);
             }
 
-            // Inline title
-            const inlineTitle = header.createSpan('entry-inline-desc');
-            inlineTitle.setText(this.getEntryTitle(entry));
+            // 2. Location (full name)
+            const loc = this.getEntryLocation(entry);
+            if (loc && loc.text) {
+                const locSpan = compactDetails.createSpan('entry-compact-location');
+                locSpan.setText(loc.text);
+                locSpan.setAttribute('title', loc.text);
+                locSpan.style.setProperty('--badge-color', loc.color);
+            }
+
+            // 3. Activity name (full name)
+            const title = this.getEntryTitle(entry);
+            if (title && title.trim()) {
+                const actSpan = compactDetails.createSpan('entry-compact-activity');
+                actSpan.setText(title);
+                actSpan.setAttribute('title', title);
+            }
         }
 
         // Icons (right side of header)
         const icons = header.createDiv('entry-header-icons');
+        icons.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+        });
+        icons.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+        }, { passive: true });
 
         // Linked note icon (paperclip)
         if (entry.linkedNote) {
-            const noteIcon = icons.createSpan('entry-icon');
+            const noteIcon = icons.createSpan('entry-icon entry-icon-note');
             setIcon(noteIcon, 'paperclip');
+            noteIcon.setAttribute('aria-label', `Open: ${entry.linkedNote}`);
             noteIcon.setAttribute('title', `Open: ${entry.linkedNote}`);
-            noteIcon.addEventListener('click', (e) => {
+
+            const handleOpenNote = (e: Event) => {
                 e.stopPropagation();
-                this.openLinkedNote(entry.linkedNote);
+                e.preventDefault();
+                this.openLinkedNote(entry.linkedNote!);
+            };
+
+            noteIcon.addEventListener('click', handleOpenNote);
+            noteIcon.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
             });
+            noteIcon.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+            }, { passive: true });
         }
 
         // Edit icon (pencil)
         const editIcon = icons.createSpan('entry-icon');
         setIcon(editIcon, 'pencil');
+        editIcon.setAttribute('aria-label', 'Edit entry');
         editIcon.setAttribute('title', 'Edit entry');
         editIcon.addEventListener('click', (e) => {
             e.stopPropagation();
+            e.preventDefault();
             this.openEditModal(entry);
         });
+        editIcon.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+        });
+        editIcon.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+        }, { passive: true });
 
         // Delete icon (trash)
         const deleteIcon = icons.createSpan('entry-icon entry-icon-delete');
         setIcon(deleteIcon, 'trash-2');
+        deleteIcon.setAttribute('aria-label', 'Delete entry');
         deleteIcon.setAttribute('title', 'Delete entry');
         deleteIcon.addEventListener('click', (e) => {
             e.stopPropagation();
+            e.preventDefault();
             this.confirmDeleteEntry(entry);
         });
+        deleteIcon.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+        });
+        deleteIcon.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+        }, { passive: true });
 
         // === BODY SECTION (30m+ only) ===
         if (!is15m) {
@@ -731,27 +775,11 @@ export class TimelineView extends ItemView {
             const schema = this.dataManager.getSchema();
 
             // 1. Category segment (primary colored card)
-            const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
-                || schema.fields.find(f => f.id === 'category');
-            let colorValStr = '';
-            if (colorField && entry.fields?.[colorField.id]) {
-                const v = entry.fields[colorField.id];
-                colorValStr = Array.isArray(v) ? v[0] || '' : v;
-            } else if (entry.activity) {
-                colorValStr = entry.activity;
-            }
-
-            if (colorValStr && colorField?.options) {
-                const matchedOpt = colorField.options.find(
-                    o => o.id.toLowerCase() === colorValStr.toLowerCase() || o.label.toLowerCase() === colorValStr.toLowerCase()
-                );
-                if (matchedOpt) colorValStr = matchedOpt.label;
-            }
-
-            if (colorValStr) {
+            const cat = this.getEntryCategory(entry);
+            if (cat && cat.text) {
                 const catSeg = footer.createSpan('powerline-seg');
-                catSeg.setText(colorValStr);
-                catSeg.style.setProperty('--seg-color', cardColor);
+                catSeg.setText(cat.text);
+                catSeg.style.setProperty('--seg-color', cat.color);
             }
 
             // 2. Location segment (fixed color badge)
@@ -1039,47 +1067,40 @@ export class TimelineView extends ItemView {
     }
 
     /**
-     * Scroll to today, centering 10:00 AM vertically in the viewport
+     * Scroll to today, positioning 9:00 AM at the top of the viewport
      */
     scrollToToday(): void {
-        this.scrollToDate(new Date(), 10);
+        this.scrollToDate(new Date(), 9);
     }
 
     /**
-     * Scroll to a specific date, positioning dayStartHour at the top (or centerHour vertically centered if provided)
+     * Scroll to a specific date, positioning topHour (defaults to 9:00 AM) at the top of the viewport
      */
-    scrollToDate(date: Date, centerHour?: number): void {
+    scrollToDate(date: Date, topHour: number = 9): void {
         this.centerDate = new Date(date);
         this.centerDate.setHours(0, 0, 0, 0);
 
         void this.loadVisibleRange().then(() => {
             this.renderVisibleDays();
 
-            if (centerHour !== undefined) {
-                const viewportHeight = this.timelineContainer.clientHeight;
-                const hourOffset = this.visibleDaysBuffer * this.dayHeight + centerHour * this.settings.hourHeight;
-                const targetScroll = hourOffset - (viewportHeight / 2);
-                this.timelineContainer.scrollTop = Math.max(0, targetScroll);
-            } else {
-                // Position the configured dayStartHour at the top of the viewport
-                const targetOffset = this.visibleDaysBuffer * this.dayHeight + this.settings.dayStartHour * this.settings.hourHeight;
-                this.timelineContainer.scrollTop = targetOffset;
-            }
+            // Position topHour (default 9am) at the top of the viewport
+            const targetOffset = this.visibleDaysBuffer * this.dayHeight + topHour * this.settings.hourHeight;
+            this.timelineContainer.scrollTop = targetOffset;
             this.updateVisibleDateLabel();
         });
     }
 
     /**
-     * Navigate by number of days
+     * Navigate by number of days, positioning 9:00 AM at the top of the viewport
      */
     private navigateDays(days: number): void {
         const newDate = new Date(this.centerDate);
         newDate.setDate(newDate.getDate() + days);
-        this.scrollToDate(newDate);
+        this.scrollToDate(newDate, 9);
     }
 
     /**
-     * Scroll to the current time (now line)
+     * Scroll to the current time (now line centered in viewport)
      */
     scrollToNow(): void {
         const now = new Date();
@@ -1173,6 +1194,79 @@ export class TimelineView extends ItemView {
         }
 
         return getColorForValue(rawVal);
+    }
+
+    /**
+     * Get category text and color for an entry based on schema field with timelineRole === 'color' (or Category)
+     */
+    private getEntryCategory(entry: TimeEntry): { text: string; color: string } | null {
+        const schema = this.dataManager.getSchema();
+        const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+            || schema.fields.find(f => f.id === 'category');
+
+        let colorValStr = '';
+        if (colorField && entry.fields?.[colorField.id]) {
+            const v = entry.fields[colorField.id];
+            colorValStr = Array.isArray(v) ? v[0] || '' : v;
+        } else if (entry.activity) {
+            colorValStr = entry.activity;
+        }
+
+        if (colorValStr && colorField?.options) {
+            const matchedOpt = colorField.options.find(
+                o => o.id.toLowerCase() === colorValStr.toLowerCase() || o.label.toLowerCase() === colorValStr.toLowerCase()
+            );
+            if (matchedOpt) colorValStr = matchedOpt.label;
+        }
+
+        if (!colorValStr.trim()) return null;
+
+        return {
+            text: colorValStr.trim(),
+            color: this.getEntryColor(entry),
+        };
+    }
+
+    /**
+     * Get location text and color for an entry based on schema badges or location field
+     */
+    private getEntryLocation(entry: TimeEntry): { text: string; color: string } | null {
+        const badges = this.getEntryBadges(entry);
+        const locBadges = badges.filter(b => b.isLocation);
+        if (locBadges.length > 0) {
+            return {
+                text: locBadges.map(b => b.text.trim()).filter(Boolean).join(', '),
+                color: locBadges[0].color || FIXED_LOCATION_COLOR,
+            };
+        }
+
+        // Direct field check if not present in badges
+        const schema = this.dataManager.getSchema();
+        const locField = schema.fields.find(f => f.id === 'location' || f.label.toLowerCase() === 'location');
+        if (locField && entry.fields?.[locField.id]) {
+            const v = entry.fields[locField.id];
+            const values = Array.isArray(v) ? v : [v];
+            const labels: string[] = [];
+            for (const item of values) {
+                let itemStr = String(item).trim();
+                if (!itemStr) continue;
+                if (locField.options) {
+                    const matchedOpt = locField.options.find(
+                        o => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
+                    );
+                    if (matchedOpt) itemStr = matchedOpt.label;
+                }
+                labels.push(itemStr);
+            }
+            if (labels.length > 0) {
+                return {
+                    text: labels.join(', '),
+                    color: FIXED_LOCATION_COLOR,
+                };
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1335,13 +1429,25 @@ export class TimelineView extends ItemView {
      * Open a linked note in Obsidian
      */
     private openLinkedNote(notePath: string): void {
-        // Add .md if not present
-        const fullPath = notePath.endsWith('.md') ? notePath : `${notePath}.md`;
-        const file = this.app.vault.getAbstractFileByPath(fullPath);
-        if (file) {
-            void this.app.workspace.openLinkText(notePath, '', false);
-        } else {
-            Logger.warn('Linked note not found:', fullPath);
+        if (!notePath || !notePath.trim()) return;
+        const cleanPath = notePath.trim().replace(/^\[\[/, '').replace(/\]\]$/, '');
+        const fullPath = cleanPath.endsWith('.md') ? cleanPath : `${cleanPath}.md`;
+
+        // Resolve file anywhere in vault via metadataCache or vault lookup
+        const file = this.app.metadataCache?.getFirstLinkpathDest(cleanPath, '')
+            || this.app.vault.getAbstractFileByPath(fullPath)
+            || this.app.vault.getAbstractFileByPath(cleanPath);
+
+        if (file && typeof file === 'object' && 'path' in file) {
+            const leaf = this.app.workspace?.getLeaf ? this.app.workspace.getLeaf(false) : null;
+            if (leaf && typeof (leaf as any).openFile === 'function') {
+                void (leaf as any).openFile(file);
+                return;
+            }
+        }
+
+        if (this.app.workspace?.openLinkText) {
+            void this.app.workspace.openLinkText(cleanPath, '', false);
         }
     }
 

@@ -1,5 +1,12 @@
-import { ReportAggregator, getEntryFieldValue, getNodeColor } from '../src/data/ReportAggregator';
-import { DEFAULT_SCHEMA_CONFIG, TimeEntry, TrackingSchemaConfig } from '../src/types';
+import {
+    ReportAggregator,
+    getEntryFieldValue,
+    getNodeColor,
+    isSleepCategory,
+    calculateAverageSleep,
+    calculateCategoryDistribution,
+} from '../src/data/ReportAggregator';
+import { DEFAULT_SCHEMA_CONFIG, TimeEntry, TrackingSchemaConfig, CategoryReportItem } from '../src/types';
 
 describe('ReportAggregator', () => {
     const mockSchema: TrackingSchemaConfig = {
@@ -390,6 +397,186 @@ describe('ReportAggregator', () => {
             expect(report.items[0].category).toBe('Deep Work');
             expect(report.items[0].totalMinutes).toBe(150);
             expect(report.items[0].entryCount).toBe(2);
+        });
+
+        it('includes average sleep calculation in category report summary', () => {
+            const entries: TimeEntry[] = [
+                createEntry({ date: '2026-10-15', start: '00:00', end: '08:00', durationMinutes: 480, category: 'Sleep', activity_name: 'Night Sleep' }),
+                createEntry({ date: '2026-10-16', start: '01:00', end: '08:00', durationMinutes: 420, category: 'Sleep', activity_name: 'Night Sleep' }),
+                createEntry({ date: '2026-10-16', start: '14:00', end: '15:00', durationMinutes: 60, category: 'Sleep', activity_name: 'Nap' }),
+                createEntry({ date: '2026-10-16', start: '16:00', end: '18:00', durationMinutes: 120, category: 'Deep Work', activity_name: 'Coding' }),
+            ];
+
+            const report = ReportAggregator.calculateCategoryReport({
+                entries,
+                schema: mockSchema,
+                rangeStart,
+                rangeEnd,
+            });
+
+            expect(report.averageSleep).toBeDefined();
+            expect(report.averageSleep?.totalSleepMinutes).toBe(960);
+            expect(report.averageSleep?.sleepDaysCount).toBe(2); // 2 distinct days: 10-15 and 10-16
+            expect(report.averageSleep?.averageSleepMinutes).toBe(480);
+            expect(report.averageSleep?.averageSleepHours).toBe(8.0);
+        });
+    });
+
+    describe('isSleepCategory', () => {
+        it('identifies sleep category with exact and case-insensitive names', () => {
+            expect(isSleepCategory('Sleep')).toBe(true);
+            expect(isSleepCategory('sleep')).toBe(true);
+            expect(isSleepCategory('🌙 Sleep')).toBe(true);
+            expect(isSleepCategory('Deep Sleep')).toBe(true);
+            expect(isSleepCategory('Sleep & Rest')).toBe(true);
+        });
+
+        it('returns false for non-sleep categories', () => {
+            expect(isSleepCategory('Deep Work')).toBe(false);
+            expect(isSleepCategory('Fitness')).toBe(false);
+            expect(isSleepCategory('Leisure')).toBe(false);
+            expect(isSleepCategory('')).toBe(false);
+        });
+
+        it('matches schema options and aliases', () => {
+            const sleepSchema: TrackingSchemaConfig = {
+                ...mockSchema,
+                fields: [
+                    {
+                        id: 'category',
+                        label: 'Category',
+                        type: 'enum',
+                        required: true,
+                        multiple: false,
+                        options: [
+                            { id: 'sleep', label: '🌙 Rest', aliases: ['sleeping'] },
+                        ],
+                    },
+                ],
+            };
+
+            expect(isSleepCategory('🌙 Rest', sleepSchema)).toBe(true);
+            expect(isSleepCategory('sleeping', sleepSchema)).toBe(true);
+            expect(isSleepCategory('sleep', sleepSchema)).toBe(true);
+        });
+    });
+
+    describe('calculateAverageSleep', () => {
+        it('returns 0 when there are no sleep entries', () => {
+            const entries: TimeEntry[] = [
+                createEntry({ date: '2026-10-15', start: '09:00', end: '17:00', durationMinutes: 480, category: 'Deep Work' }),
+            ];
+
+            const stats = calculateAverageSleep({
+                entries,
+                schema: mockSchema,
+                rangeStart,
+                rangeEnd,
+            });
+
+            expect(stats.totalSleepMinutes).toBe(0);
+            expect(stats.sleepDaysCount).toBe(0);
+            expect(stats.averageSleepMinutes).toBe(0);
+            expect(stats.averageSleepHours).toBe(0);
+        });
+
+        it('calculates average sleep across multiple days and accounts for naps on same day', () => {
+            const entries: TimeEntry[] = [
+                createEntry({ date: '2026-10-10', start: '00:00', end: '07:30', durationMinutes: 450, category: 'Sleep' }),
+                createEntry({ date: '2026-10-11', start: '00:30', end: '08:00', durationMinutes: 450, category: 'Sleep' }),
+                createEntry({ date: '2026-10-12', start: '01:00', end: '08:00', durationMinutes: 420, category: 'Sleep' }),
+                createEntry({ date: '2026-10-12', start: '13:00', end: '14:00', durationMinutes: 60, category: 'Sleep' }), // Nap on same day
+            ];
+
+            const stats = calculateAverageSleep({
+                entries,
+                schema: mockSchema,
+                rangeStart,
+                rangeEnd,
+            });
+
+            expect(stats.totalSleepMinutes).toBe(1380);
+            expect(stats.sleepDaysCount).toBe(3);
+            expect(stats.averageSleepMinutes).toBe(460);
+            expect(stats.averageSleepHours).toBeCloseTo(7.666, 2);
+        });
+    });
+
+    describe('calculateCategoryDistribution', () => {
+        const createItem = (category: string, totalMinutes: number, color: string = '#123456'): CategoryReportItem => ({
+            category,
+            totalMinutes,
+            color,
+            percentageOfTime: 0,
+            entryCount: 1,
+            activities: [],
+        });
+
+        it('returns empty result for empty items or 0 total minutes', () => {
+            const res = calculateCategoryDistribution([]);
+            expect(res.slices).toEqual([]);
+            expect(res.totalMinutes).toBe(0);
+
+            const zeroRes = calculateCategoryDistribution([createItem('Empty', 0)]);
+            expect(zeroRes.slices).toEqual([]);
+            expect(zeroRes.totalMinutes).toBe(0);
+        });
+
+        it('returns all items directly when items count <= 8 (no Others slice)', () => {
+            const items = [
+                createItem('Cat 1', 100, '#111'),
+                createItem('Cat 2', 80, '#222'),
+                createItem('Cat 3', 60, '#333'),
+                createItem('Cat 4', 40, '#444'),
+                createItem('Cat 5', 20, '#555'),
+            ];
+
+            const res = calculateCategoryDistribution(items, 8);
+            expect(res.totalMinutes).toBe(300);
+            expect(res.slices).toHaveLength(5);
+            expect(res.slices.map(s => s.name)).toEqual(['Cat 1', 'Cat 2', 'Cat 3', 'Cat 4', 'Cat 5']);
+            expect(res.slices[0].percentage).toBeCloseTo((100 / 300) * 100);
+            expect(res.slices.some(s => s.name === 'Others')).toBe(false);
+        });
+
+        it('retains top 8 categories and groups remaining categories into Others', () => {
+            const items = [
+                createItem('Cat 1', 100, '#01'),
+                createItem('Cat 2', 90, '#02'),
+                createItem('Cat 3', 80, '#03'),
+                createItem('Cat 4', 70, '#04'),
+                createItem('Cat 5', 60, '#05'),
+                createItem('Cat 6', 50, '#06'),
+                createItem('Cat 7', 40, '#07'),
+                createItem('Cat 8', 30, '#08'),
+                createItem('Cat 9', 20, '#09'),
+                createItem('Cat 10', 15, '#10'),
+                createItem('Cat 11', 10, '#11'),
+            ];
+
+            const total = 100 + 90 + 80 + 70 + 60 + 50 + 40 + 30 + 20 + 15 + 10; // 565
+            const res = calculateCategoryDistribution(items, 8);
+
+            expect(res.totalMinutes).toBe(total);
+            expect(res.slices).toHaveLength(9); // 8 top + 1 Others
+
+            // Top 8
+            for (let i = 0; i < 8; i++) {
+                expect(res.slices[i].name).toBe(`Cat ${i + 1}`);
+                expect(res.slices[i].minutes).toBe(items[i].totalMinutes);
+                expect(res.slices[i].percentage).toBeCloseTo((items[i].totalMinutes / total) * 100);
+            }
+
+            // Others
+            const othersSlice = res.slices[8];
+            expect(othersSlice.name).toBe('Others');
+            expect(othersSlice.minutes).toBe(20 + 15 + 10); // 45
+            expect(othersSlice.percentage).toBeCloseTo((45 / total) * 100);
+            expect(othersSlice.color).toBe('#8e8e93');
+
+            // Sum of all slice percentages is 100%
+            const sumPercentages = res.slices.reduce((sum, s) => sum + s.percentage, 0);
+            expect(sumPercentages).toBeCloseTo(100);
         });
     });
 });

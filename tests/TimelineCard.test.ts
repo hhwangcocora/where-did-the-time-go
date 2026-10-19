@@ -291,16 +291,95 @@ describe('TimelineView Dynamic Card Helpers', () => {
             expect(card.classList.contains('entry-15m')).toBe(true);
             expect(parseFloat(card.style.height)).toBe(25);
         });
+
+        it('renders 15-minute entries with full category, location, and activity name in compact header', () => {
+            const shortEntry = createSampleEntry({
+                start: '09:00',
+                end: '09:15',
+                durationMinutes: 15,
+                fields: {
+                    category: 'Deep Work',
+                    location: 'Home Office',
+                    activity_name: 'Quick Standup',
+                },
+            });
+
+            const container = document.createElement('div');
+            (view as any).entriesContainer = container;
+            (view as any).renderEntryCard(shortEntry, 0);
+
+            const card = container.querySelector('.timeline-entry-card') as HTMLElement;
+            expect(card).toBeDefined();
+            expect(card.classList.contains('entry-15m')).toBe(true);
+
+            const compactDetails = card.querySelector('.entry-compact-details') as HTMLElement;
+            expect(compactDetails).not.toBeNull();
+
+            // 1. Category (full name)
+            const catEl = compactDetails.querySelector('.entry-compact-category') as HTMLElement;
+            expect(catEl).not.toBeNull();
+            expect(catEl.textContent).toBe('Deep Work');
+            expect(catEl.getAttribute('title')).toBe('Deep Work');
+
+            // 2. Location (full name - not truncated to 3 letters)
+            const locEl = compactDetails.querySelector('.entry-compact-location') as HTMLElement;
+            expect(locEl).not.toBeNull();
+            expect(locEl.textContent).toBe('Home Office');
+            expect(locEl.textContent).not.toBe('HOM');
+            expect(locEl.getAttribute('title')).toBe('Home Office');
+
+            // 3. Activity name (full name)
+            const actEl = compactDetails.querySelector('.entry-compact-activity') as HTMLElement;
+            expect(actEl).not.toBeNull();
+            expect(actEl.textContent).toBe('Quick Standup');
+            expect(actEl.getAttribute('title')).toBe('Quick Standup');
+
+            // Verify order in compactDetails: Category -> Location -> Activity
+            const children = Array.from(compactDetails.children);
+            expect(children[0]).toBe(catEl);
+            expect(children[1]).toBe(locEl);
+            expect(children[2]).toBe(actEl);
+        });
+
+        it('renders compact line when location is omitted', () => {
+            const shortEntry = createSampleEntry({
+                start: '14:00',
+                end: '14:15',
+                durationMinutes: 15,
+                fields: {
+                    category: 'Fitness',
+                    activity_name: 'Stretch Break',
+                },
+            });
+
+            const container = document.createElement('div');
+            (view as any).entriesContainer = container;
+            (view as any).renderEntryCard(shortEntry, 0);
+
+            const card = container.querySelector('.timeline-entry-card') as HTMLElement;
+            const compactDetails = card.querySelector('.entry-compact-details') as HTMLElement;
+            expect(compactDetails).not.toBeNull();
+
+            const catEl = compactDetails.querySelector('.entry-compact-category') as HTMLElement;
+            expect(catEl.textContent).toBe('Fitness');
+
+            const locEl = compactDetails.querySelector('.entry-compact-location');
+            expect(locEl).toBeNull();
+
+            const actEl = compactDetails.querySelector('.entry-compact-activity') as HTMLElement;
+            expect(actEl.textContent).toBe('Stretch Break');
+        });
     });
 
-    describe('scrollToToday and vertical centering', () => {
-        it('scrollToToday centers 10:00 AM vertically in the viewport', async () => {
+    describe('scrollToToday, scrollToNow, and date navigation to 9:00 AM at top', () => {
+        it('scrollToToday positions 9:00 AM at the top of the viewport', async () => {
             const container = document.createElement('div');
             Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
             (view as any).timelineContainer = container;
             (view as any).visibleDaysBuffer = 3;
             (view as any).dayHeight = 24 * 100;
             (view as any).settings.hourHeight = 100;
+            (view as any).settings.dayStartHour = 9;
 
             (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
             (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
@@ -309,18 +388,44 @@ describe('TimelineView Dynamic Card Helpers', () => {
             view.scrollToToday();
             await new Promise(resolve => setTimeout(resolve, 0));
 
-            // targetScroll = (3 * 2400 + 10 * 100) - (600 / 2) = 7200 + 1000 - 300 = 7900
-            expect(container.scrollTop).toBe(7900);
+            // targetOffset = 3 * 2400 + 9 * 100 = 7200 + 900 = 8100
+            expect(container.scrollTop).toBe(8100);
         });
 
-        it('scrollToDate positions dayStartHour at the top when centerHour is not provided', async () => {
+        it('scrollToNow centers the current time indicator in the viewport', async () => {
+            jest.useFakeTimers();
+            jest.setSystemTime(new Date(2026, 9, 18, 14, 30, 0));
+
             const container = document.createElement('div');
             Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
             (view as any).timelineContainer = container;
             (view as any).visibleDaysBuffer = 3;
             (view as any).dayHeight = 24 * 100;
             (view as any).settings.hourHeight = 100;
-            (view as any).settings.dayStartHour = 6;
+            (view as any).settings.dayStartHour = 9;
+
+            (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
+            (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
+            (view as any).updateVisibleDateLabel = jest.fn();
+
+            view.scrollToNow();
+            await Promise.resolve();
+
+            // nowOffset = 3 * 2400 + 14.5 * 100 = 7200 + 1450 = 8650
+            // targetScroll = 8650 - (600 / 2) = 8350
+            expect(container.scrollTop).toBe(8350);
+
+            jest.useRealTimers();
+        });
+
+        it('scrollToDate positions 9:00 AM at the top of the viewport by default', async () => {
+            const container = document.createElement('div');
+            Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
+            (view as any).timelineContainer = container;
+            (view as any).visibleDaysBuffer = 3;
+            (view as any).dayHeight = 24 * 100;
+            (view as any).settings.hourHeight = 100;
+            (view as any).settings.dayStartHour = 9;
 
             (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
             (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
@@ -329,8 +434,28 @@ describe('TimelineView Dynamic Card Helpers', () => {
             view.scrollToDate(new Date(2026, 9, 18));
             await new Promise(resolve => setTimeout(resolve, 0));
 
-            // targetOffset = 3 * 2400 + 6 * 100 = 7200 + 600 = 7800
-            expect(container.scrollTop).toBe(7800);
+            // targetOffset = 3 * 2400 + 9 * 100 = 7200 + 900 = 8100
+            expect(container.scrollTop).toBe(8100);
+        });
+
+        it('navigateDays positions 9:00 AM at the top of the viewport', async () => {
+            const container = document.createElement('div');
+            Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
+            (view as any).timelineContainer = container;
+            (view as any).visibleDaysBuffer = 3;
+            (view as any).dayHeight = 24 * 100;
+            (view as any).settings.hourHeight = 100;
+            (view as any).settings.dayStartHour = 9;
+            (view as any).centerDate = new Date(2026, 9, 18);
+
+            (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
+            (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
+            (view as any).updateVisibleDateLabel = jest.fn();
+
+            (view as any).navigateDays(1);
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(container.scrollTop).toBe(8100);
         });
     });
 
@@ -374,6 +499,85 @@ describe('TimelineView Dynamic Card Helpers', () => {
                     end: '2026-01-15 11:00',
                 })
             );
+        });
+    });
+
+    describe('Linked note attachment icon interaction', () => {
+        it('renders noteIcon with aria-label, title, and stops mousedown propagation', () => {
+            const entryWithNote = createSampleEntry({
+                linkedNote: 'My Attached Note',
+            });
+
+            const container = document.createElement('div');
+            (view as any).entriesContainer = container;
+            (view as any).renderEntryCard(entryWithNote, 0);
+
+            const card = container.querySelector('.timeline-entry-card') as HTMLElement;
+            const noteIcon = card.querySelector('.entry-icon-note') as HTMLElement;
+            expect(noteIcon).not.toBeNull();
+            expect(noteIcon.getAttribute('aria-label')).toBe('Open: My Attached Note');
+            expect(noteIcon.getAttribute('title')).toBe('Open: My Attached Note');
+
+            // Test that mousedown on noteIcon stops propagation
+            const mousedownEvent = new (window as any).MouseEvent('mousedown', { bubbles: true, cancelable: true });
+            const stopPropagationSpy = jest.spyOn(mousedownEvent, 'stopPropagation');
+            noteIcon.dispatchEvent(mousedownEvent);
+            expect(stopPropagationSpy).toHaveBeenCalled();
+        });
+
+        it('immediately triggers openLinkedNote on click without drag interference', () => {
+            const entryWithNote = createSampleEntry({
+                linkedNote: '[[Project Roadmap]]',
+            });
+
+            const container = document.createElement('div');
+            (view as any).entriesContainer = container;
+
+            const openLinkedNoteSpy = jest.spyOn(view as any, 'openLinkedNote').mockImplementation(() => {});
+
+            (view as any).renderEntryCard(entryWithNote, 0);
+
+            const card = container.querySelector('.timeline-entry-card') as HTMLElement;
+            const noteIcon = card.querySelector('.entry-icon-note') as HTMLElement;
+
+            // Trigger click immediately
+            const clickEvent = new (window as any).MouseEvent('click', { bubbles: true, cancelable: true });
+            noteIcon.dispatchEvent(clickEvent);
+
+            expect(openLinkedNoteSpy).toHaveBeenCalledWith('[[Project Roadmap]]');
+        });
+
+        it('openLinkedNote strips wiki brackets and resolves file in leaf or via openLinkText', () => {
+            const openLinkTextMock = jest.fn();
+            const openFileMock = jest.fn();
+
+            (view as any).app = {
+                vault: {
+                    getAbstractFileByPath: jest.fn().mockReturnValue(null),
+                },
+                metadataCache: {
+                    getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
+                        if (path === 'Subfolder/MyNote') {
+                            return { path: 'Subfolder/MyNote.md' };
+                        }
+                        return null;
+                    }),
+                },
+                workspace: {
+                    getLeaf: jest.fn().mockReturnValue({
+                        openFile: openFileMock,
+                    }),
+                    openLinkText: openLinkTextMock,
+                },
+            };
+
+            // Call with wikilink
+            (view as any).openLinkedNote('[[Subfolder/MyNote]]');
+            expect(openFileMock).toHaveBeenCalledWith({ path: 'Subfolder/MyNote.md' });
+
+            // Call with non-existing note (fallback to openLinkText)
+            (view as any).openLinkedNote('NonExistentNote');
+            expect(openLinkTextMock).toHaveBeenCalledWith('NonExistentNote', '', false);
         });
     });
 });

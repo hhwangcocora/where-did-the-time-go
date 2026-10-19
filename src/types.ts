@@ -304,6 +304,16 @@ export interface CategoryReportItem {
 }
 
 /**
+ * Sleep statistics for the report period
+ */
+export interface AverageSleepStats {
+    totalSleepMinutes: number;
+    sleepDaysCount: number;
+    averageSleepMinutes: number;
+    averageSleepHours: number;
+}
+
+/**
  * Summary KPIs for the category report
  */
 export interface CategoryReportSummary {
@@ -311,6 +321,7 @@ export interface CategoryReportSummary {
     categoriesCount: number;
     topCategoryName: string;
     topCategoryMinutes: number;
+    averageSleep?: AverageSleepStats;
     items: CategoryReportItem[];
 }
 
@@ -346,7 +357,7 @@ export interface TimeTrackerSettings {
 export const DEFAULT_SETTINGS: TimeTrackerSettings = {
     timeTrackingFolder: 'TimeTracking',
     hourHeight: 100,
-    dayStartHour: 6,
+    dayStartHour: 9,
     dayEndHour: 22,
     use24HourFormat: true,
     weekStart: 'monday',

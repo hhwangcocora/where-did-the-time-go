@@ -6,6 +6,7 @@ import type {
     CategoryReportItem,
     CategoryActivityBreakdown,
     CategoryReportSummary,
+    AverageSleepStats,
 } from '../types';
 import { getColorForValue } from '../utils/colors';
 
@@ -396,12 +397,197 @@ export class ReportAggregator {
 
         items.sort((a, b) => b.totalMinutes - a.totalMinutes);
 
+        const averageSleep = ReportAggregator.calculateAverageSleep({
+            entries,
+            schema,
+            rangeStart,
+            rangeEnd,
+            getEffectiveDuration,
+        });
+
         return {
             activeDaysCount: activeDays.size,
             categoriesCount: items.length,
             topCategoryName: items.length > 0 ? items[0].category : '(None)',
             topCategoryMinutes: items.length > 0 ? items[0].totalMinutes : 0,
+            averageSleep,
             items,
         };
     }
+
+    /**
+     * Check if a category represents sleep
+     */
+    static isSleepCategory(catName: string, schema?: TrackingSchemaConfig): boolean {
+        return isSleepCategory(catName, schema);
+    }
+
+    /**
+     * Compute average sleep hours per day in the given range
+     */
+    static calculateAverageSleep(options: {
+        entries: TimeEntry[];
+        schema: TrackingSchemaConfig;
+        rangeStart: Date;
+        rangeEnd: Date;
+        getEffectiveDuration?: (entry: TimeEntry, start: Date, end: Date) => number;
+    }): AverageSleepStats {
+        return calculateAverageSleep(options);
+    }
+
+    /**
+     * Compute top categories distribution for pie chart, grouping rest as 'Others'
+     */
+    static calculateCategoryDistribution(
+        items: CategoryReportItem[],
+        maxTop: number = 8
+    ): CategoryDistributionResult {
+        return calculateCategoryDistribution(items, maxTop);
+    }
+}
+
+/**
+ * Check if a category represents sleep (case-insensitive, matching options/labels/emojis/aliases)
+ */
+export function isSleepCategory(catName: string, schema?: TrackingSchemaConfig): boolean {
+    if (!catName) return false;
+    const lower = catName.toLowerCase().trim();
+    if (lower.includes('sleep')) return true;
+    if (schema) {
+        const categoryField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+            || schema.fields.find(f => f.id === 'category')
+            || schema.fields[0];
+        if (categoryField?.options) {
+            const opt = categoryField.options.find(o =>
+                o.id.toLowerCase() === lower ||
+                o.label.toLowerCase() === lower ||
+                (o.aliases && o.aliases.some(a => a.toLowerCase() === lower))
+            );
+            if (opt && (opt.id.toLowerCase().includes('sleep') || opt.label.toLowerCase().includes('sleep'))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Compute average sleep hours per day based on sleep entries in the range
+ */
+export function calculateAverageSleep(options: {
+    entries: TimeEntry[];
+    schema: TrackingSchemaConfig;
+    rangeStart: Date;
+    rangeEnd: Date;
+    getEffectiveDuration?: (entry: TimeEntry, start: Date, end: Date) => number;
+}): AverageSleepStats {
+    const {
+        entries,
+        schema,
+        rangeStart,
+        rangeEnd,
+        getEffectiveDuration = defaultEffectiveDuration,
+    } = options;
+
+    const categoryField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+        || schema.fields.find(f => f.id === 'category')
+        || schema.fields[0];
+
+    let totalSleepMinutes = 0;
+    const sleepDays = new Set<string>();
+
+    for (const entry of entries) {
+        const catVal = categoryField ? getEntryFieldValue(entry, categoryField.id, schema) : '(Unspecified)';
+        if (!isSleepCategory(catVal, schema)) {
+            continue;
+        }
+
+        const duration = getEffectiveDuration(entry, rangeStart, rangeEnd);
+        if (duration <= 0) continue;
+
+        totalSleepMinutes += duration;
+        const dateKey = entry.date || formatDateKey(entry.startDateTime);
+        if (dateKey) {
+            sleepDays.add(dateKey);
+        }
+    }
+
+    const sleepDaysCount = sleepDays.size;
+    const averageSleepMinutes = sleepDaysCount > 0 ? totalSleepMinutes / sleepDaysCount : 0;
+    const averageSleepHours = averageSleepMinutes / 60;
+
+    return {
+        totalSleepMinutes,
+        sleepDaysCount,
+        averageSleepMinutes,
+        averageSleepHours,
+    };
+}
+
+/**
+ * A slice in the category distribution pie chart
+ */
+export interface CategoryDistributionSlice {
+    name: string;
+    minutes: number;
+    percentage: number;
+    color: string;
+}
+
+/**
+ * Result of calculating category distribution for pie chart
+ */
+export interface CategoryDistributionResult {
+    slices: CategoryDistributionSlice[];
+    totalMinutes: number;
+}
+
+/**
+ * Calculate pie chart distribution for top categories, grouping remainder into 'Others'
+ */
+export function calculateCategoryDistribution(
+    items: CategoryReportItem[],
+    maxTop: number = 8
+): CategoryDistributionResult {
+    const totalMinutes = items.reduce((sum, item) => sum + item.totalMinutes, 0);
+    if (totalMinutes <= 0 || items.length === 0) {
+        return { slices: [], totalMinutes: 0 };
+    }
+
+    if (items.length <= maxTop) {
+        return {
+            totalMinutes,
+            slices: items.map(it => ({
+                name: it.category,
+                minutes: it.totalMinutes,
+                percentage: (it.totalMinutes / totalMinutes) * 100,
+                color: it.color,
+            })),
+        };
+    }
+
+    const topItems = items.slice(0, maxTop);
+    const restItems = items.slice(maxTop);
+    const restMinutes = restItems.reduce((sum, item) => sum + item.totalMinutes, 0);
+
+    const slices: CategoryDistributionSlice[] = topItems.map(it => ({
+        name: it.category,
+        minutes: it.totalMinutes,
+        percentage: (it.totalMinutes / totalMinutes) * 100,
+        color: it.color,
+    }));
+
+    if (restMinutes > 0) {
+        slices.push({
+            name: 'Others',
+            minutes: restMinutes,
+            percentage: (restMinutes / totalMinutes) * 100,
+            color: '#8e8e93',
+        });
+    }
+
+    return {
+        totalMinutes,
+        slices,
+    };
 }

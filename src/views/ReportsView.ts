@@ -1,8 +1,9 @@
 import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
-import { VIEW_TYPE_REPORTS, TimeEntry, TimeTrackerSettings, TimeRangePreset, CategoryReportItem, CategoryReportSummary } from '../types';
+import { VIEW_TYPE_REPORTS, TimeEntry, TimeTrackerSettings, TimeRangePreset, CategoryReportItem, CategoryReportSummary, DailyDiary } from '../types';
 import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
-import { ReportAggregator, getEntryFieldValue } from '../data/ReportAggregator';
+import { ReportAggregator, getEntryFieldValue, getNodeColor } from '../data/ReportAggregator';
+import { DiaryModal } from '../modals/DiaryModal';
 import { Logger } from '../utils/Logger';
 
 /** Maximum days allowed for report range to prevent performance issues */
@@ -29,6 +30,7 @@ export class ReportsView extends ItemView {
         items: [],
     };
     private currentEntries: TimeEntry[] = [];
+    private currentDiaries: Map<string, DailyDiary> = new Map();
     private currentRangeStart: Date | null = null;
     private currentRangeEnd: Date | null = null;
 
@@ -40,7 +42,9 @@ export class ReportsView extends ItemView {
     private rangeSelector: HTMLElement;
     private customDateInputs: HTMLElement;
     private summaryContainer: HTMLElement;
+    private chartContainer: HTMLElement;
     private categoryTableContainer: HTMLElement;
+    private diaryTimelineContainer: HTMLElement;
 
     constructor(
         leaf: WorkspaceLeaf,
@@ -105,11 +109,17 @@ export class ReportsView extends ItemView {
         this.customDateInputs.addClass('is-hidden');
         this.renderCustomDateInputs();
 
-        // Summary KPI cards section (top category, active days, categories count)
+        // Summary KPI cards section (Avg sleep, active days, categories count)
         this.summaryContainer = this.contentContainer.createDiv('reports-summary');
 
-        // Category breakdown table container
+        // Pie chart container
+        this.chartContainer = this.contentContainer.createDiv('reports-chart-container');
+
+        // Category breakdown table container (List view)
         this.categoryTableContainer = this.contentContainer.createDiv('reports-table-container');
+
+        // Daily diary timeline container (below the category / activity list view)
+        this.diaryTimelineContainer = this.contentContainer.createDiv('reports-diary-timeline-container');
     }
 
     /**
@@ -328,12 +338,16 @@ export class ReportsView extends ItemView {
 
         Logger.log('ReportsView: Loading report for', start.toDateString(), 'to', end.toDateString());
 
-        // Load entries for date range
-        const entries = await this.dataManager.loadDateRange(start, end);
+        // Load entries and diaries for date range
+        const [entries, diaries] = await Promise.all([
+            this.dataManager.loadDateRange(start, end),
+            this.dataManager.loadDiariesForRange(start, end),
+        ]);
 
-        Logger.log('ReportsView: Found', entries.length, 'entries');
+        Logger.log('ReportsView: Found', entries.length, 'entries,', diaries.size, 'diaries');
 
         this.currentEntries = entries;
+        this.currentDiaries = diaries;
         this.currentRangeStart = start;
         this.currentRangeEnd = end;
 
@@ -347,21 +361,17 @@ export class ReportsView extends ItemView {
             getEffectiveDuration: (entry, s, e) => this.dataManager.getEffectiveDuration(entry, s, e),
         });
 
-        // Auto-expand categories by default if not set
-        if (this.expandedCategories.size === 0) {
-            for (const item of this.reportSummary.items) {
-                this.expandedCategories.add(item.category);
-            }
-        }
-
-        // Render summary and category breakdown table
+        // Render summary, pie chart, category breakdown table, and daily diary timeline
+        // Category / activity list view remains collapsed by default
         this.renderSummary(start, end);
+        this.renderPieChart();
         this.renderCategoryTable();
+        this.renderDiaryTimeline(start, end);
     }
 
     /**
      * Render the summary KPI section
-     * Highlights category focus and time allocation
+     * Highlights average sleep hours per day, active days, and categories tracked
      */
     private renderSummary(start: Date, end: Date): void {
         this.summaryContainer.empty();
@@ -370,13 +380,25 @@ export class ReportsView extends ItemView {
         const rangeLabel = this.summaryContainer.createDiv('reports-range-label');
         rangeLabel.setText(this.formatDateRange(start, end));
 
-        // Top Category
-        const focusCard = this.summaryContainer.createDiv('reports-summary-card reports-top-category-card');
-        focusCard.createDiv({ text: 'Top Category', cls: 'reports-summary-label' });
-        const focusText = this.reportSummary.topCategoryMinutes > 0
-            ? `${this.reportSummary.topCategoryName} (${this.formatDuration(this.reportSummary.topCategoryMinutes)})`
-            : '(None)';
-        focusCard.createDiv({ text: focusText, cls: 'reports-summary-value' });
+        // Average Sleep per Day (replaces Top Category)
+        const sleepStats = this.reportSummary.averageSleep || {
+            totalSleepMinutes: 0,
+            sleepDaysCount: 0,
+            averageSleepMinutes: 0,
+            averageSleepHours: 0,
+        };
+
+        const sleepCard = this.summaryContainer.createDiv('reports-summary-card reports-sleep-card');
+        sleepCard.createDiv({ text: 'Avg Sleep / Day', cls: 'reports-summary-label' });
+        const sleepText = sleepStats.averageSleepHours > 0
+            ? `${sleepStats.averageSleepHours.toFixed(1)} hrs`
+            : '0 hrs';
+        sleepCard.createDiv({ text: sleepText, cls: 'reports-summary-value' });
+        if (sleepStats.sleepDaysCount > 0) {
+            sleepCard.title = `Based on ${sleepStats.sleepDaysCount} ${sleepStats.sleepDaysCount === 1 ? 'day' : 'days'} with sleep (total: ${this.formatDuration(Math.round(sleepStats.totalSleepMinutes))})`;
+        } else {
+            sleepCard.title = 'No sleep entries tracked in this period';
+        }
 
         // Active Days
         const daysCard = this.summaryContainer.createDiv('reports-summary-card');
@@ -393,6 +415,164 @@ export class ReportsView extends ItemView {
             text: `${this.reportSummary.categoriesCount} ${this.reportSummary.categoriesCount === 1 ? 'category' : 'categories'}`,
             cls: 'reports-summary-value',
         });
+    }
+
+    /**
+     * Render pie chart showing top 8 categories by time spent, with remainder grouped as 'Others'
+     */
+    private renderPieChart(): void {
+        this.chartContainer.empty();
+
+        if (this.reportSummary.items.length === 0) {
+            return;
+        }
+
+        const distribution = ReportAggregator.calculateCategoryDistribution(this.reportSummary.items, 8);
+        if (distribution.slices.length === 0 || distribution.totalMinutes === 0) {
+            return;
+        }
+
+        const card = this.chartContainer.createDiv('reports-chart-card');
+
+        // Header
+        const header = card.createDiv('reports-chart-header');
+        header.createEl('h3', { text: 'Time Allocation', cls: 'reports-chart-title' });
+
+        // Body
+        const body = card.createDiv('reports-chart-body');
+
+        // Pie container
+        const pieContainer = body.createDiv('reports-pie-container');
+
+        const size = 220;
+        const cx = 110;
+        const cy = 110;
+        const rOuter = 95;
+        const rInner = 55;
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+        svg.setAttribute('width', `${size}`);
+        svg.setAttribute('height', `${size}`);
+        svg.setAttribute('class', 'reports-pie-svg');
+
+        let currentAngle = -Math.PI / 2;
+        const sliceElements: SVGPathElement[] = [];
+
+        const createDonutPath = (startA: number, endA: number): string => {
+            if (endA - startA >= 2 * Math.PI - 0.001) {
+                return `M ${cx} ${cy - rOuter} A ${rOuter} ${rOuter} 0 1 1 ${cx} ${cy + rOuter} A ${rOuter} ${rOuter} 0 1 1 ${cx} ${cy - rOuter} M ${cx} ${cy - rInner} A ${rInner} ${rInner} 0 1 0 ${cx} ${cy + rInner} A ${rInner} ${rInner} 0 1 0 ${cx} ${cy - rInner} Z`;
+            }
+            const x1 = cx + rOuter * Math.cos(startA);
+            const y1 = cy + rOuter * Math.sin(startA);
+            const x2 = cx + rOuter * Math.cos(endA);
+            const y2 = cy + rOuter * Math.sin(endA);
+            const x3 = cx + rInner * Math.cos(endA);
+            const y3 = cy + rInner * Math.sin(endA);
+            const x4 = cx + rInner * Math.cos(startA);
+            const y4 = cy + rInner * Math.sin(startA);
+            const largeArc = endA - startA > Math.PI ? 1 : 0;
+            return `M ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${rInner} ${rInner} 0 ${largeArc} 0 ${x4} ${y4} Z`;
+        };
+
+        // Center text group
+        const centerGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        centerGroup.setAttribute('class', 'reports-pie-center');
+
+        const titleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        titleText.setAttribute('x', `${cx}`);
+        titleText.setAttribute('y', `${cy - 8}`);
+        titleText.setAttribute('class', 'reports-pie-center-title');
+        titleText.textContent = 'Total';
+
+        const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        valueText.setAttribute('x', `${cx}`);
+        valueText.setAttribute('y', `${cy + 12}`);
+        valueText.setAttribute('class', 'reports-pie-center-value');
+        valueText.textContent = this.formatDuration(distribution.totalMinutes);
+
+        const subText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        subText.setAttribute('x', `${cx}`);
+        subText.setAttribute('y', `${cy + 28}`);
+        subText.setAttribute('class', 'reports-pie-center-sub');
+        subText.textContent = '';
+
+        centerGroup.appendChild(titleText);
+        centerGroup.appendChild(valueText);
+        centerGroup.appendChild(subText);
+
+        const legendContainer = body.createDiv('reports-pie-legend');
+        const legendItems: HTMLElement[] = [];
+
+        // Reset center function
+        const resetCenter = () => {
+            titleText.textContent = 'Total';
+            valueText.textContent = this.formatDuration(distribution.totalMinutes);
+            subText.textContent = '';
+            for (const el of sliceElements) el.classList.remove('is-highlighted');
+            for (const item of legendItems) item.classList.remove('is-highlighted');
+        };
+
+        // Highlight slice function
+        const highlightSlice = (index: number) => {
+            const s = distribution.slices[index];
+            if (!s) return;
+            const displayName = s.name.length > 15 ? s.name.slice(0, 14) + '…' : s.name;
+            titleText.textContent = displayName;
+            valueText.textContent = this.formatDuration(s.minutes);
+            subText.textContent = `${s.percentage.toFixed(1)}%`;
+
+            for (let i = 0; i < sliceElements.length; i++) {
+                if (i === index) sliceElements[i].classList.add('is-highlighted');
+                else sliceElements[i].classList.remove('is-highlighted');
+            }
+            for (let i = 0; i < legendItems.length; i++) {
+                if (i === index) legendItems[i].classList.add('is-highlighted');
+                else legendItems[i].classList.remove('is-highlighted');
+            }
+        };
+
+        // Render slices
+        for (let i = 0; i < distribution.slices.length; i++) {
+            const slice = distribution.slices[i];
+            const angleDelta = (slice.percentage / 100) * 2 * Math.PI;
+            const nextAngle = currentAngle + angleDelta;
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', createDonutPath(currentAngle, nextAngle));
+            path.setAttribute('fill', slice.color);
+            path.setAttribute('class', 'reports-pie-slice');
+            path.setAttribute('data-index', `${i}`);
+
+            path.addEventListener('mouseenter', () => highlightSlice(i));
+            path.addEventListener('mouseleave', () => resetCenter());
+
+            svg.appendChild(path);
+            sliceElements.push(path);
+            currentAngle = nextAngle;
+        }
+
+        svg.appendChild(centerGroup);
+        pieContainer.appendChild(svg);
+
+        // Render legend items
+        for (let i = 0; i < distribution.slices.length; i++) {
+            const slice = distribution.slices[i];
+            const legendItem = legendContainer.createDiv('reports-legend-item');
+            legendItem.setAttribute('data-index', `${i}`);
+
+            const dot = legendItem.createSpan('reports-legend-dot');
+            dot.style.backgroundColor = slice.color;
+
+            legendItem.createSpan({ text: slice.name, cls: 'reports-legend-name', title: slice.name });
+            legendItem.createSpan({ text: this.formatDuration(slice.minutes), cls: 'reports-legend-time' });
+            legendItem.createSpan({ text: `${slice.percentage.toFixed(1)}%`, cls: 'reports-legend-percent' });
+
+            legendItem.addEventListener('mouseenter', () => highlightSlice(i));
+            legendItem.addEventListener('mouseleave', () => resetCenter());
+
+            legendItems.push(legendItem);
+        }
     }
 
     /**
@@ -505,6 +685,194 @@ export class ReportsView extends ItemView {
                     const actBar = actBarCell.createDiv('reports-bar reports-bar-nested');
                     actBar.style.width = `${Math.min(100, Math.max(1, act.percentageOfCategory))}%`;
                     actBar.style.backgroundColor = act.color;
+                }
+            }
+        }
+    }
+
+    /**
+     * Render the daily diary timeline section below the category table
+     * Shows daily reflections and activity time summaries in descending date order
+     */
+    private renderDiaryTimeline(start: Date, end: Date): void {
+        this.diaryTimelineContainer.empty();
+
+        const sectionHeader = this.diaryTimelineContainer.createDiv('reports-section-header');
+        sectionHeader.createEl('h3', { text: 'Daily Diaries & Activities', cls: 'reports-section-title' });
+
+        // Calculate all dates in the range, ordered descending (from latest to start)
+        const now = new Date();
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startMidnight = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+        const endMidnight = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+        let latestDay = endMidnight > todayMidnight && startMidnight <= todayMidnight ? todayMidnight : endMidnight;
+
+        // If there are entries beyond latestDay up to endMidnight, include them
+        for (const entry of this.currentEntries) {
+            const eDate = new Date(entry.startDateTime.getFullYear(), entry.startDateTime.getMonth(), entry.startDateTime.getDate());
+            if (eDate > latestDay && eDate <= endMidnight) {
+                latestDay = eDate;
+            }
+        }
+
+        const datesDesc: string[] = [];
+        const current = new Date(latestDay);
+        while (current >= startMidnight) {
+            datesDesc.push(TableParser.getDateString(current));
+            current.setDate(current.getDate() - 1);
+        }
+
+        if (datesDesc.length === 0) {
+            this.diaryTimelineContainer.createDiv({
+                text: 'No days in selected period.',
+                cls: 'reports-empty',
+            });
+            return;
+        }
+
+        // Map entries by date
+        const dayEntriesMap = new Map<string, TimeEntry[]>();
+        for (const entry of this.currentEntries) {
+            const dateStr = entry.date || TableParser.getDateString(entry.startDateTime);
+            if (!dateStr) continue;
+            let list = dayEntriesMap.get(dateStr);
+            if (!list) {
+                list = [];
+                dayEntriesMap.set(dateStr, list);
+            }
+            list.push(entry);
+        }
+
+        const schema = this.dataManager.getSchema();
+        const categoryField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+            || schema.fields.find(f => f.id === 'category')
+            || schema.fields[0];
+        const activityField = schema.fields.find(f => f.ui?.timelineRole === 'title')
+            || schema.fields.find(f => f.id === 'activity_name');
+
+        const timeline = this.diaryTimelineContainer.createDiv('reports-timeline');
+
+        const todayStr = TableParser.getDateString(now);
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        const yesterdayStr = TableParser.getDateString(yesterday);
+
+        for (const dateStr of datesDesc) {
+            const dayItem = timeline.createDiv('reports-timeline-item');
+
+            // Timeline spine marker
+            const marker = dayItem.createDiv('reports-timeline-marker');
+            marker.createSpan('reports-timeline-dot');
+
+            // Day card
+            const card = dayItem.createDiv('reports-timeline-card');
+
+            // Header: Date & action
+            const cardHeader = card.createDiv('reports-timeline-header');
+            const dateWrapper = cardHeader.createDiv('reports-timeline-date-wrapper');
+
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const dateObj = new Date(year, month - 1, day);
+            const friendlyDate = dateObj.toLocaleDateString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+            });
+
+            dateWrapper.createSpan({ text: dateStr, cls: 'reports-timeline-date-iso' });
+            dateWrapper.createSpan({ text: ` (${friendlyDate})`, cls: 'reports-timeline-date-friendly' });
+
+            if (dateStr === todayStr) {
+                cardHeader.createSpan({ text: 'Today', cls: 'reports-timeline-badge reports-timeline-badge-today' });
+            } else if (dateStr === yesterdayStr) {
+                cardHeader.createSpan({ text: 'Yesterday', cls: 'reports-timeline-badge' });
+            }
+
+            const diary = this.currentDiaries.get(dateStr);
+            const hasDiary = !!(diary && diary.content && diary.content.trim().length > 0);
+
+            const editBtn = cardHeader.createEl('button', {
+                cls: 'reports-timeline-diary-btn reports-btn',
+                text: hasDiary ? 'Edit Diary' : 'Write Diary',
+            });
+            editBtn.addEventListener('click', () => {
+                new DiaryModal(this.app, this.dataManager, dateStr, () => {
+                    void this.loadReport();
+                }).open();
+            });
+
+            // Diary reflection section
+            const diarySection = card.createDiv('reports-timeline-diary-section');
+
+            if (hasDiary) {
+                const diaryText = diarySection.createDiv('reports-timeline-diary-text');
+                diaryText.setText(diary!.content.trim());
+            } else {
+                diarySection.createDiv({ text: '(None)', cls: 'reports-timeline-empty-text' });
+            }
+
+            // Activities summary section
+            const activitiesSection = card.createDiv('reports-timeline-activities-section');
+            const actHeadingRow = activitiesSection.createDiv('reports-timeline-activities-header');
+            actHeadingRow.createDiv({ text: 'Activities (time spent)', cls: 'reports-timeline-subheading' });
+
+            const dayEntries = dayEntriesMap.get(dateStr) || [];
+            if (dayEntries.length === 0) {
+                activitiesSection.createDiv({ text: '(None)', cls: 'reports-timeline-empty-text' });
+            } else {
+                const dayTotalMinutes = dayEntries.reduce((sum, e) => sum + e.durationMinutes, 0);
+                actHeadingRow.createSpan({
+                    text: `Total: ${this.formatDuration(dayTotalMinutes)}`,
+                    cls: 'reports-timeline-total-badge',
+                });
+
+                const actList = activitiesSection.createDiv('reports-timeline-activities-list');
+
+                // Aggregate by activity name + category
+                const actMap = new Map<string, {
+                    name: string;
+                    category: string;
+                    color: string;
+                    durationMinutes: number;
+                }>();
+
+                for (const entry of dayEntries) {
+                    const catVal = categoryField ? getEntryFieldValue(entry, categoryField.id, schema) : '(Unspecified)';
+                    const actVal = activityField ? getEntryFieldValue(entry, activityField.id, schema) : '(None)';
+                    const displayName = (actVal && actVal !== '(None)') ? actVal : catVal;
+                    const key = `${catVal}:::${displayName}`;
+
+                    let existing = actMap.get(key);
+                    if (!existing) {
+                        const color = categoryField ? getNodeColor(categoryField.id, catVal, schema) : '#888888';
+                        existing = {
+                            name: displayName,
+                            category: catVal,
+                            color,
+                            durationMinutes: 0,
+                        };
+                        actMap.set(key, existing);
+                    }
+                    existing.durationMinutes += entry.durationMinutes;
+                }
+
+                const sortedActs = Array.from(actMap.values())
+                    .sort((a, b) => b.durationMinutes - a.durationMinutes);
+
+                for (const act of sortedActs) {
+                    const pill = actList.createDiv('reports-timeline-act-pill');
+                    const dot = pill.createSpan('reports-color-dot');
+                    dot.style.backgroundColor = act.color;
+
+                    pill.createSpan({ text: act.name, cls: 'reports-timeline-act-name' });
+                    if (act.category && act.category !== act.name && act.category !== '(Unspecified)') {
+                        pill.createSpan({ text: `(${act.category})`, cls: 'reports-timeline-act-cat' });
+                    }
+                    pill.createSpan({
+                        text: this.formatDuration(act.durationMinutes),
+                        cls: 'reports-timeline-act-time',
+                    });
                 }
             }
         }

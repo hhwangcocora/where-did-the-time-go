@@ -249,6 +249,38 @@ export class DataManager {
     }
 
     /**
+     * Load all diary reflections for a date range
+     */
+    async loadDiariesForRange(startDate: Date, endDate: Date): Promise<Map<string, DailyDiary>> {
+        const diaries = new Map<string, DailyDiary>();
+        const monthsToLoad = new Set<string>();
+
+        const startMonth = TableParser.getMonthString(startDate);
+        const endMonth = TableParser.getMonthString(endDate);
+        const current = new Date(startDate);
+        current.setDate(1);
+
+        while (TableParser.getMonthString(current) <= endMonth) {
+            monthsToLoad.add(TableParser.getMonthString(current));
+            current.setMonth(current.getMonth() + 1);
+        }
+
+        const startStr = TableParser.getDateString(startDate);
+        const endStr = TableParser.getDateString(endDate);
+
+        for (const monthStr of monthsToLoad) {
+            const parsed = await this.loadMonth(monthStr);
+            for (const [dateStr, diary] of parsed.diariesByDate) {
+                if (dateStr >= startStr && dateStr <= endStr) {
+                    diaries.set(dateStr, diary);
+                }
+            }
+        }
+
+        return diaries;
+    }
+
+    /**
      * Calculate effective duration of an entry within a date range
      * Handles entries that span midnight by only counting time within the range
      */

@@ -293,7 +293,7 @@ var DEFAULT_SCHEMA_CONFIG = {
 var DEFAULT_SETTINGS = {
   timeTrackingFolder: "TimeTracking",
   hourHeight: 100,
-  dayStartHour: 6,
+  dayStartHour: 9,
   dayEndHour: 22,
   use24HourFormat: true,
   weekStart: "monday",
@@ -11497,6 +11497,32 @@ var _DataManager = class {
     ).sort((a, b) => a.startDateTime.getTime() - b.startDateTime.getTime());
   }
   /**
+   * Load all diary reflections for a date range
+   */
+  async loadDiariesForRange(startDate, endDate) {
+    const diaries = /* @__PURE__ */ new Map();
+    const monthsToLoad = /* @__PURE__ */ new Set();
+    const startMonth = TableParser.getMonthString(startDate);
+    const endMonth = TableParser.getMonthString(endDate);
+    const current = new Date(startDate);
+    current.setDate(1);
+    while (TableParser.getMonthString(current) <= endMonth) {
+      monthsToLoad.add(TableParser.getMonthString(current));
+      current.setMonth(current.getMonth() + 1);
+    }
+    const startStr = TableParser.getDateString(startDate);
+    const endStr = TableParser.getDateString(endDate);
+    for (const monthStr of monthsToLoad) {
+      const parsed = await this.loadMonth(monthStr);
+      for (const [dateStr, diary] of parsed.diariesByDate) {
+        if (dateStr >= startStr && dateStr <= endStr) {
+          diaries.set(dateStr, diary);
+        }
+      }
+    }
+    return diaries;
+  }
+  /**
    * Calculate effective duration of an entry within a date range
    * Handles entries that span midnight by only counting time within the range
    */
@@ -14204,12 +14230,11 @@ var TimelineView = class extends import_obsidian7.ItemView {
     this.centerDate.setHours(0, 0, 0, 0);
     await this.render();
     requestAnimationFrame(() => {
-      const viewportHeight = this.timelineContainer.clientHeight;
-      const hourOffset = this.visibleDaysBuffer * this.dayHeight + 10 * this.settings.hourHeight;
-      const targetOffset = hourOffset - viewportHeight / 2;
-      this.timelineContainer.scrollTop = Math.max(0, targetOffset);
+      const topHour = 9;
+      const targetOffset = this.visibleDaysBuffer * this.dayHeight + topHour * this.settings.hourHeight;
+      this.timelineContainer.scrollTop = targetOffset;
       this.updateVisibleDateLabel();
-      Logger.log("onOpen: scrolled to today (10am centered), offset=", targetOffset);
+      Logger.log("onOpen: scrolled to today (9am at top), offset=", targetOffset);
     });
   }
   async onClose() {
@@ -14598,7 +14623,6 @@ var TimelineView = class extends import_obsidian7.ItemView {
    * Design spec: responsive by duration (15m/30m/45m/60m+)
    */
   renderEntryCard(entry, dayTopOffset) {
-    var _a;
     const cardStartMinutes = entry.startDateTime.getHours() * 60 + entry.startDateTime.getMinutes();
     const totalDurationMinutes = entry.durationMinutes;
     const top = dayTopOffset + cardStartMinutes / 60 * this.settings.hourHeight;
@@ -14629,43 +14653,83 @@ var TimelineView = class extends import_obsidian7.ItemView {
     const durationBadge = header.createSpan("entry-duration-badge");
     durationBadge.setText(this.formatDuration(entry.durationMinutes));
     if (is15m) {
-      const tinyTags = header.createDiv("entry-tiny-tags");
-      const badges = this.getEntryBadges(entry);
-      if (badges.length > 0) {
-        const tag = tinyTags.createSpan("tiny-tag");
-        if (badges[0].isLocation) {
-          tag.addClass("tiny-tag-location");
-        }
-        tag.setText(badges[0].text.substring(0, 3).toUpperCase());
-        tag.style.setProperty("--tag-color", badges[0].color);
+      const compactDetails = header.createDiv("entry-compact-details");
+      const cat = this.getEntryCategory(entry);
+      if (cat && cat.text) {
+        const catSpan = compactDetails.createSpan("entry-compact-category");
+        catSpan.setText(cat.text);
+        catSpan.setAttribute("title", cat.text);
+        catSpan.style.setProperty("--badge-color", cat.color);
       }
-      const inlineTitle = header.createSpan("entry-inline-desc");
-      inlineTitle.setText(this.getEntryTitle(entry));
+      const loc = this.getEntryLocation(entry);
+      if (loc && loc.text) {
+        const locSpan = compactDetails.createSpan("entry-compact-location");
+        locSpan.setText(loc.text);
+        locSpan.setAttribute("title", loc.text);
+        locSpan.style.setProperty("--badge-color", loc.color);
+      }
+      const title = this.getEntryTitle(entry);
+      if (title && title.trim()) {
+        const actSpan = compactDetails.createSpan("entry-compact-activity");
+        actSpan.setText(title);
+        actSpan.setAttribute("title", title);
+      }
     }
     const icons = header.createDiv("entry-header-icons");
+    icons.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
+    icons.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
+    }, { passive: true });
     if (entry.linkedNote) {
-      const noteIcon = icons.createSpan("entry-icon");
+      const noteIcon = icons.createSpan("entry-icon entry-icon-note");
       (0, import_obsidian7.setIcon)(noteIcon, "paperclip");
+      noteIcon.setAttribute("aria-label", `Open: ${entry.linkedNote}`);
       noteIcon.setAttribute("title", `Open: ${entry.linkedNote}`);
-      noteIcon.addEventListener("click", (e) => {
+      const handleOpenNote = (e) => {
         e.stopPropagation();
+        e.preventDefault();
         this.openLinkedNote(entry.linkedNote);
+      };
+      noteIcon.addEventListener("click", handleOpenNote);
+      noteIcon.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
       });
+      noteIcon.addEventListener("touchstart", (e) => {
+        e.stopPropagation();
+      }, { passive: true });
     }
     const editIcon = icons.createSpan("entry-icon");
     (0, import_obsidian7.setIcon)(editIcon, "pencil");
+    editIcon.setAttribute("aria-label", "Edit entry");
     editIcon.setAttribute("title", "Edit entry");
     editIcon.addEventListener("click", (e) => {
       e.stopPropagation();
+      e.preventDefault();
       this.openEditModal(entry);
     });
+    editIcon.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
+    editIcon.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
+    }, { passive: true });
     const deleteIcon = icons.createSpan("entry-icon entry-icon-delete");
     (0, import_obsidian7.setIcon)(deleteIcon, "trash-2");
+    deleteIcon.setAttribute("aria-label", "Delete entry");
     deleteIcon.setAttribute("title", "Delete entry");
     deleteIcon.addEventListener("click", (e) => {
       e.stopPropagation();
+      e.preventDefault();
       this.confirmDeleteEntry(entry);
     });
+    deleteIcon.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
+    deleteIcon.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
+    }, { passive: true });
     if (!is15m) {
       const body = card.createDiv("entry-card-body");
       const titleEl = body.createDiv("entry-body-desc");
@@ -14679,28 +14743,11 @@ var TimelineView = class extends import_obsidian7.ItemView {
     if (!is15m) {
       const footer = card.createDiv("entry-card-footer");
       const schema = this.dataManager.getSchema();
-      const colorField = schema.fields.find((f) => {
-        var _a2;
-        return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "color";
-      }) || schema.fields.find((f) => f.id === "category");
-      let colorValStr = "";
-      if (colorField && ((_a = entry.fields) == null ? void 0 : _a[colorField.id])) {
-        const v = entry.fields[colorField.id];
-        colorValStr = Array.isArray(v) ? v[0] || "" : v;
-      } else if (entry.activity) {
-        colorValStr = entry.activity;
-      }
-      if (colorValStr && (colorField == null ? void 0 : colorField.options)) {
-        const matchedOpt = colorField.options.find(
-          (o) => o.id.toLowerCase() === colorValStr.toLowerCase() || o.label.toLowerCase() === colorValStr.toLowerCase()
-        );
-        if (matchedOpt)
-          colorValStr = matchedOpt.label;
-      }
-      if (colorValStr) {
+      const cat = this.getEntryCategory(entry);
+      if (cat && cat.text) {
         const catSeg = footer.createSpan("powerline-seg");
-        catSeg.setText(colorValStr);
-        catSeg.style.setProperty("--seg-color", cardColor);
+        catSeg.setText(cat.text);
+        catSeg.style.setProperty("--seg-color", cat.color);
       }
       const badges = this.getEntryBadges(entry);
       for (const badge of badges) {
@@ -14899,41 +14946,34 @@ var TimelineView = class extends import_obsidian7.ItemView {
     this.entryDragTooltipEl.style.top = `${newTop + newHeight + 8}px`;
   }
   /**
-   * Scroll to today, centering 10:00 AM vertically in the viewport
+   * Scroll to today, positioning 9:00 AM at the top of the viewport
    */
   scrollToToday() {
-    this.scrollToDate(new Date(), 10);
+    this.scrollToDate(new Date(), 9);
   }
   /**
-   * Scroll to a specific date, positioning dayStartHour at the top (or centerHour vertically centered if provided)
+   * Scroll to a specific date, positioning topHour (defaults to 9:00 AM) at the top of the viewport
    */
-  scrollToDate(date, centerHour) {
+  scrollToDate(date, topHour = 9) {
     this.centerDate = new Date(date);
     this.centerDate.setHours(0, 0, 0, 0);
     void this.loadVisibleRange().then(() => {
       this.renderVisibleDays();
-      if (centerHour !== void 0) {
-        const viewportHeight = this.timelineContainer.clientHeight;
-        const hourOffset = this.visibleDaysBuffer * this.dayHeight + centerHour * this.settings.hourHeight;
-        const targetScroll = hourOffset - viewportHeight / 2;
-        this.timelineContainer.scrollTop = Math.max(0, targetScroll);
-      } else {
-        const targetOffset = this.visibleDaysBuffer * this.dayHeight + this.settings.dayStartHour * this.settings.hourHeight;
-        this.timelineContainer.scrollTop = targetOffset;
-      }
+      const targetOffset = this.visibleDaysBuffer * this.dayHeight + topHour * this.settings.hourHeight;
+      this.timelineContainer.scrollTop = targetOffset;
       this.updateVisibleDateLabel();
     });
   }
   /**
-   * Navigate by number of days
+   * Navigate by number of days, positioning 9:00 AM at the top of the viewport
    */
   navigateDays(days) {
     const newDate = new Date(this.centerDate);
     newDate.setDate(newDate.getDate() + days);
-    this.scrollToDate(newDate);
+    this.scrollToDate(newDate, 9);
   }
   /**
-   * Scroll to the current time (now line)
+   * Scroll to the current time (now line centered in viewport)
    */
   scrollToNow() {
     const now = new Date();
@@ -15013,6 +15053,78 @@ var TimelineView = class extends import_obsidian7.ItemView {
         return opt.color;
     }
     return getColorForValue(rawVal);
+  }
+  /**
+   * Get category text and color for an entry based on schema field with timelineRole === 'color' (or Category)
+   */
+  getEntryCategory(entry) {
+    var _a;
+    const schema = this.dataManager.getSchema();
+    const colorField = schema.fields.find((f) => {
+      var _a2;
+      return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "color";
+    }) || schema.fields.find((f) => f.id === "category");
+    let colorValStr = "";
+    if (colorField && ((_a = entry.fields) == null ? void 0 : _a[colorField.id])) {
+      const v = entry.fields[colorField.id];
+      colorValStr = Array.isArray(v) ? v[0] || "" : v;
+    } else if (entry.activity) {
+      colorValStr = entry.activity;
+    }
+    if (colorValStr && (colorField == null ? void 0 : colorField.options)) {
+      const matchedOpt = colorField.options.find(
+        (o) => o.id.toLowerCase() === colorValStr.toLowerCase() || o.label.toLowerCase() === colorValStr.toLowerCase()
+      );
+      if (matchedOpt)
+        colorValStr = matchedOpt.label;
+    }
+    if (!colorValStr.trim())
+      return null;
+    return {
+      text: colorValStr.trim(),
+      color: this.getEntryColor(entry)
+    };
+  }
+  /**
+   * Get location text and color for an entry based on schema badges or location field
+   */
+  getEntryLocation(entry) {
+    var _a;
+    const badges = this.getEntryBadges(entry);
+    const locBadges = badges.filter((b) => b.isLocation);
+    if (locBadges.length > 0) {
+      return {
+        text: locBadges.map((b) => b.text.trim()).filter(Boolean).join(", "),
+        color: locBadges[0].color || FIXED_LOCATION_COLOR
+      };
+    }
+    const schema = this.dataManager.getSchema();
+    const locField = schema.fields.find((f) => f.id === "location" || f.label.toLowerCase() === "location");
+    if (locField && ((_a = entry.fields) == null ? void 0 : _a[locField.id])) {
+      const v = entry.fields[locField.id];
+      const values = Array.isArray(v) ? v : [v];
+      const labels = [];
+      for (const item of values) {
+        let itemStr = String(item).trim();
+        if (!itemStr)
+          continue;
+        if (locField.options) {
+          const matchedOpt = locField.options.find(
+            (o) => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
+          );
+          if (matchedOpt)
+            itemStr = matchedOpt.label;
+        }
+        labels.push(itemStr);
+      }
+      if (labels.length > 0) {
+        return {
+          text: labels.join(", "),
+          color: FIXED_LOCATION_COLOR
+        };
+      }
+    }
+    return null;
   }
   /**
    * Get title for an entry card based on schema field with timelineRole === 'title' (or Activity Name)
@@ -15160,12 +15272,21 @@ var TimelineView = class extends import_obsidian7.ItemView {
    * Open a linked note in Obsidian
    */
   openLinkedNote(notePath) {
-    const fullPath = notePath.endsWith(".md") ? notePath : `${notePath}.md`;
-    const file = this.app.vault.getAbstractFileByPath(fullPath);
-    if (file) {
-      void this.app.workspace.openLinkText(notePath, "", false);
-    } else {
-      Logger.warn("Linked note not found:", fullPath);
+    var _a, _b, _c;
+    if (!notePath || !notePath.trim())
+      return;
+    const cleanPath = notePath.trim().replace(/^\[\[/, "").replace(/\]\]$/, "");
+    const fullPath = cleanPath.endsWith(".md") ? cleanPath : `${cleanPath}.md`;
+    const file = ((_a = this.app.metadataCache) == null ? void 0 : _a.getFirstLinkpathDest(cleanPath, "")) || this.app.vault.getAbstractFileByPath(fullPath) || this.app.vault.getAbstractFileByPath(cleanPath);
+    if (file && typeof file === "object" && "path" in file) {
+      const leaf = ((_b = this.app.workspace) == null ? void 0 : _b.getLeaf) ? this.app.workspace.getLeaf(false) : null;
+      if (leaf && typeof leaf.openFile === "function") {
+        void leaf.openFile(file);
+        return;
+      }
+    }
+    if ((_c = this.app.workspace) == null ? void 0 : _c.openLinkText) {
+      void this.app.workspace.openLinkText(cleanPath, "", false);
     }
   }
   // Modal methods
@@ -15828,15 +15949,139 @@ var ReportAggregator = class {
       });
     }
     items.sort((a, b) => b.totalMinutes - a.totalMinutes);
+    const averageSleep = ReportAggregator.calculateAverageSleep({
+      entries,
+      schema,
+      rangeStart,
+      rangeEnd,
+      getEffectiveDuration
+    });
     return {
       activeDaysCount: activeDays.size,
       categoriesCount: items.length,
       topCategoryName: items.length > 0 ? items[0].category : "(None)",
       topCategoryMinutes: items.length > 0 ? items[0].totalMinutes : 0,
+      averageSleep,
       items
     };
   }
+  /**
+   * Check if a category represents sleep
+   */
+  static isSleepCategory(catName, schema) {
+    return isSleepCategory(catName, schema);
+  }
+  /**
+   * Compute average sleep hours per day in the given range
+   */
+  static calculateAverageSleep(options) {
+    return calculateAverageSleep(options);
+  }
+  /**
+   * Compute top categories distribution for pie chart, grouping rest as 'Others'
+   */
+  static calculateCategoryDistribution(items, maxTop = 8) {
+    return calculateCategoryDistribution(items, maxTop);
+  }
 };
+function isSleepCategory(catName, schema) {
+  if (!catName)
+    return false;
+  const lower = catName.toLowerCase().trim();
+  if (lower.includes("sleep"))
+    return true;
+  if (schema) {
+    const categoryField = schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+    }) || schema.fields.find((f) => f.id === "category") || schema.fields[0];
+    if (categoryField == null ? void 0 : categoryField.options) {
+      const opt = categoryField.options.find(
+        (o) => o.id.toLowerCase() === lower || o.label.toLowerCase() === lower || o.aliases && o.aliases.some((a) => a.toLowerCase() === lower)
+      );
+      if (opt && (opt.id.toLowerCase().includes("sleep") || opt.label.toLowerCase().includes("sleep"))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+function calculateAverageSleep(options) {
+  const {
+    entries,
+    schema,
+    rangeStart,
+    rangeEnd,
+    getEffectiveDuration = defaultEffectiveDuration
+  } = options;
+  const categoryField = schema.fields.find((f) => {
+    var _a;
+    return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+  }) || schema.fields.find((f) => f.id === "category") || schema.fields[0];
+  let totalSleepMinutes = 0;
+  const sleepDays = /* @__PURE__ */ new Set();
+  for (const entry of entries) {
+    const catVal = categoryField ? getEntryFieldValue(entry, categoryField.id, schema) : "(Unspecified)";
+    if (!isSleepCategory(catVal, schema)) {
+      continue;
+    }
+    const duration = getEffectiveDuration(entry, rangeStart, rangeEnd);
+    if (duration <= 0)
+      continue;
+    totalSleepMinutes += duration;
+    const dateKey = entry.date || formatDateKey(entry.startDateTime);
+    if (dateKey) {
+      sleepDays.add(dateKey);
+    }
+  }
+  const sleepDaysCount = sleepDays.size;
+  const averageSleepMinutes = sleepDaysCount > 0 ? totalSleepMinutes / sleepDaysCount : 0;
+  const averageSleepHours = averageSleepMinutes / 60;
+  return {
+    totalSleepMinutes,
+    sleepDaysCount,
+    averageSleepMinutes,
+    averageSleepHours
+  };
+}
+function calculateCategoryDistribution(items, maxTop = 8) {
+  const totalMinutes = items.reduce((sum, item) => sum + item.totalMinutes, 0);
+  if (totalMinutes <= 0 || items.length === 0) {
+    return { slices: [], totalMinutes: 0 };
+  }
+  if (items.length <= maxTop) {
+    return {
+      totalMinutes,
+      slices: items.map((it) => ({
+        name: it.category,
+        minutes: it.totalMinutes,
+        percentage: it.totalMinutes / totalMinutes * 100,
+        color: it.color
+      }))
+    };
+  }
+  const topItems = items.slice(0, maxTop);
+  const restItems = items.slice(maxTop);
+  const restMinutes = restItems.reduce((sum, item) => sum + item.totalMinutes, 0);
+  const slices = topItems.map((it) => ({
+    name: it.category,
+    minutes: it.totalMinutes,
+    percentage: it.totalMinutes / totalMinutes * 100,
+    color: it.color
+  }));
+  if (restMinutes > 0) {
+    slices.push({
+      name: "Others",
+      minutes: restMinutes,
+      percentage: restMinutes / totalMinutes * 100,
+      color: "#8e8e93"
+    });
+  }
+  return {
+    totalMinutes,
+    slices
+  };
+}
 
 // src/views/ReportsView.ts
 var MAX_REPORT_DAYS = 90;
@@ -15856,6 +16101,7 @@ var ReportsView = class extends import_obsidian8.ItemView {
       items: []
     };
     this.currentEntries = [];
+    this.currentDiaries = /* @__PURE__ */ new Map();
     this.currentRangeStart = null;
     this.currentRangeEnd = null;
     // Expanded category names
@@ -15901,7 +16147,9 @@ var ReportsView = class extends import_obsidian8.ItemView {
     this.customDateInputs.addClass("is-hidden");
     this.renderCustomDateInputs();
     this.summaryContainer = this.contentContainer.createDiv("reports-summary");
+    this.chartContainer = this.contentContainer.createDiv("reports-chart-container");
     this.categoryTableContainer = this.contentContainer.createDiv("reports-table-container");
+    this.diaryTimelineContainer = this.contentContainer.createDiv("reports-diary-timeline-container");
   }
   /**
    * Render the header with title and export controls
@@ -16090,9 +16338,13 @@ var ReportsView = class extends import_obsidian8.ItemView {
       return;
     }
     Logger.log("ReportsView: Loading report for", start.toDateString(), "to", end.toDateString());
-    const entries = await this.dataManager.loadDateRange(start, end);
-    Logger.log("ReportsView: Found", entries.length, "entries");
+    const [entries, diaries] = await Promise.all([
+      this.dataManager.loadDateRange(start, end),
+      this.dataManager.loadDiariesForRange(start, end)
+    ]);
+    Logger.log("ReportsView: Found", entries.length, "entries,", diaries.size, "diaries");
     this.currentEntries = entries;
+    this.currentDiaries = diaries;
     this.currentRangeStart = start;
     this.currentRangeEnd = end;
     const schema = this.dataManager.getSchema();
@@ -16103,26 +16355,34 @@ var ReportsView = class extends import_obsidian8.ItemView {
       rangeEnd: end,
       getEffectiveDuration: (entry, s, e) => this.dataManager.getEffectiveDuration(entry, s, e)
     });
-    if (this.expandedCategories.size === 0) {
-      for (const item of this.reportSummary.items) {
-        this.expandedCategories.add(item.category);
-      }
-    }
     this.renderSummary(start, end);
+    this.renderPieChart();
     this.renderCategoryTable();
+    this.renderDiaryTimeline(start, end);
   }
   /**
    * Render the summary KPI section
-   * Highlights category focus and time allocation
+   * Highlights average sleep hours per day, active days, and categories tracked
    */
   renderSummary(start, end) {
     this.summaryContainer.empty();
     const rangeLabel = this.summaryContainer.createDiv("reports-range-label");
     rangeLabel.setText(this.formatDateRange(start, end));
-    const focusCard = this.summaryContainer.createDiv("reports-summary-card reports-top-category-card");
-    focusCard.createDiv({ text: "Top Category", cls: "reports-summary-label" });
-    const focusText = this.reportSummary.topCategoryMinutes > 0 ? `${this.reportSummary.topCategoryName} (${this.formatDuration(this.reportSummary.topCategoryMinutes)})` : "(None)";
-    focusCard.createDiv({ text: focusText, cls: "reports-summary-value" });
+    const sleepStats = this.reportSummary.averageSleep || {
+      totalSleepMinutes: 0,
+      sleepDaysCount: 0,
+      averageSleepMinutes: 0,
+      averageSleepHours: 0
+    };
+    const sleepCard = this.summaryContainer.createDiv("reports-summary-card reports-sleep-card");
+    sleepCard.createDiv({ text: "Avg Sleep / Day", cls: "reports-summary-label" });
+    const sleepText = sleepStats.averageSleepHours > 0 ? `${sleepStats.averageSleepHours.toFixed(1)} hrs` : "0 hrs";
+    sleepCard.createDiv({ text: sleepText, cls: "reports-summary-value" });
+    if (sleepStats.sleepDaysCount > 0) {
+      sleepCard.title = `Based on ${sleepStats.sleepDaysCount} ${sleepStats.sleepDaysCount === 1 ? "day" : "days"} with sleep (total: ${this.formatDuration(Math.round(sleepStats.totalSleepMinutes))})`;
+    } else {
+      sleepCard.title = "No sleep entries tracked in this period";
+    }
     const daysCard = this.summaryContainer.createDiv("reports-summary-card");
     daysCard.createDiv({ text: "Active Days", cls: "reports-summary-label" });
     daysCard.createDiv({
@@ -16135,6 +16395,133 @@ var ReportsView = class extends import_obsidian8.ItemView {
       text: `${this.reportSummary.categoriesCount} ${this.reportSummary.categoriesCount === 1 ? "category" : "categories"}`,
       cls: "reports-summary-value"
     });
+  }
+  /**
+   * Render pie chart showing top 8 categories by time spent, with remainder grouped as 'Others'
+   */
+  renderPieChart() {
+    this.chartContainer.empty();
+    if (this.reportSummary.items.length === 0) {
+      return;
+    }
+    const distribution = ReportAggregator.calculateCategoryDistribution(this.reportSummary.items, 8);
+    if (distribution.slices.length === 0 || distribution.totalMinutes === 0) {
+      return;
+    }
+    const card = this.chartContainer.createDiv("reports-chart-card");
+    const header = card.createDiv("reports-chart-header");
+    header.createEl("h3", { text: "Time Allocation", cls: "reports-chart-title" });
+    const body = card.createDiv("reports-chart-body");
+    const pieContainer = body.createDiv("reports-pie-container");
+    const size = 220;
+    const cx = 110;
+    const cy = 110;
+    const rOuter = 95;
+    const rInner = 55;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+    svg.setAttribute("width", `${size}`);
+    svg.setAttribute("height", `${size}`);
+    svg.setAttribute("class", "reports-pie-svg");
+    let currentAngle = -Math.PI / 2;
+    const sliceElements = [];
+    const createDonutPath = (startA, endA) => {
+      if (endA - startA >= 2 * Math.PI - 1e-3) {
+        return `M ${cx} ${cy - rOuter} A ${rOuter} ${rOuter} 0 1 1 ${cx} ${cy + rOuter} A ${rOuter} ${rOuter} 0 1 1 ${cx} ${cy - rOuter} M ${cx} ${cy - rInner} A ${rInner} ${rInner} 0 1 0 ${cx} ${cy + rInner} A ${rInner} ${rInner} 0 1 0 ${cx} ${cy - rInner} Z`;
+      }
+      const x1 = cx + rOuter * Math.cos(startA);
+      const y1 = cy + rOuter * Math.sin(startA);
+      const x2 = cx + rOuter * Math.cos(endA);
+      const y2 = cy + rOuter * Math.sin(endA);
+      const x3 = cx + rInner * Math.cos(endA);
+      const y3 = cy + rInner * Math.sin(endA);
+      const x4 = cx + rInner * Math.cos(startA);
+      const y4 = cy + rInner * Math.sin(startA);
+      const largeArc = endA - startA > Math.PI ? 1 : 0;
+      return `M ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${rInner} ${rInner} 0 ${largeArc} 0 ${x4} ${y4} Z`;
+    };
+    const centerGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    centerGroup.setAttribute("class", "reports-pie-center");
+    const titleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    titleText.setAttribute("x", `${cx}`);
+    titleText.setAttribute("y", `${cy - 8}`);
+    titleText.setAttribute("class", "reports-pie-center-title");
+    titleText.textContent = "Total";
+    const valueText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    valueText.setAttribute("x", `${cx}`);
+    valueText.setAttribute("y", `${cy + 12}`);
+    valueText.setAttribute("class", "reports-pie-center-value");
+    valueText.textContent = this.formatDuration(distribution.totalMinutes);
+    const subText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    subText.setAttribute("x", `${cx}`);
+    subText.setAttribute("y", `${cy + 28}`);
+    subText.setAttribute("class", "reports-pie-center-sub");
+    subText.textContent = "";
+    centerGroup.appendChild(titleText);
+    centerGroup.appendChild(valueText);
+    centerGroup.appendChild(subText);
+    const legendContainer = body.createDiv("reports-pie-legend");
+    const legendItems = [];
+    const resetCenter = () => {
+      titleText.textContent = "Total";
+      valueText.textContent = this.formatDuration(distribution.totalMinutes);
+      subText.textContent = "";
+      for (const el of sliceElements)
+        el.classList.remove("is-highlighted");
+      for (const item of legendItems)
+        item.classList.remove("is-highlighted");
+    };
+    const highlightSlice = (index2) => {
+      const s = distribution.slices[index2];
+      if (!s)
+        return;
+      const displayName = s.name.length > 15 ? s.name.slice(0, 14) + "\u2026" : s.name;
+      titleText.textContent = displayName;
+      valueText.textContent = this.formatDuration(s.minutes);
+      subText.textContent = `${s.percentage.toFixed(1)}%`;
+      for (let i = 0; i < sliceElements.length; i++) {
+        if (i === index2)
+          sliceElements[i].classList.add("is-highlighted");
+        else
+          sliceElements[i].classList.remove("is-highlighted");
+      }
+      for (let i = 0; i < legendItems.length; i++) {
+        if (i === index2)
+          legendItems[i].classList.add("is-highlighted");
+        else
+          legendItems[i].classList.remove("is-highlighted");
+      }
+    };
+    for (let i = 0; i < distribution.slices.length; i++) {
+      const slice = distribution.slices[i];
+      const angleDelta = slice.percentage / 100 * 2 * Math.PI;
+      const nextAngle = currentAngle + angleDelta;
+      const path2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path2.setAttribute("d", createDonutPath(currentAngle, nextAngle));
+      path2.setAttribute("fill", slice.color);
+      path2.setAttribute("class", "reports-pie-slice");
+      path2.setAttribute("data-index", `${i}`);
+      path2.addEventListener("mouseenter", () => highlightSlice(i));
+      path2.addEventListener("mouseleave", () => resetCenter());
+      svg.appendChild(path2);
+      sliceElements.push(path2);
+      currentAngle = nextAngle;
+    }
+    svg.appendChild(centerGroup);
+    pieContainer.appendChild(svg);
+    for (let i = 0; i < distribution.slices.length; i++) {
+      const slice = distribution.slices[i];
+      const legendItem = legendContainer.createDiv("reports-legend-item");
+      legendItem.setAttribute("data-index", `${i}`);
+      const dot = legendItem.createSpan("reports-legend-dot");
+      dot.style.backgroundColor = slice.color;
+      legendItem.createSpan({ text: slice.name, cls: "reports-legend-name", title: slice.name });
+      legendItem.createSpan({ text: this.formatDuration(slice.minutes), cls: "reports-legend-time" });
+      legendItem.createSpan({ text: `${slice.percentage.toFixed(1)}%`, cls: "reports-legend-percent" });
+      legendItem.addEventListener("mouseenter", () => highlightSlice(i));
+      legendItem.addEventListener("mouseleave", () => resetCenter());
+      legendItems.push(legendItem);
+    }
   }
   /**
    * Render the category breakdown table showing time spent per category
@@ -16215,6 +16602,152 @@ var ReportsView = class extends import_obsidian8.ItemView {
           const actBar = actBarCell.createDiv("reports-bar reports-bar-nested");
           actBar.style.width = `${Math.min(100, Math.max(1, act.percentageOfCategory))}%`;
           actBar.style.backgroundColor = act.color;
+        }
+      }
+    }
+  }
+  /**
+   * Render the daily diary timeline section below the category table
+   * Shows daily reflections and activity time summaries in descending date order
+   */
+  renderDiaryTimeline(start, end) {
+    this.diaryTimelineContainer.empty();
+    const sectionHeader = this.diaryTimelineContainer.createDiv("reports-section-header");
+    sectionHeader.createEl("h3", { text: "Daily Diaries & Activities", cls: "reports-section-title" });
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startMidnight = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endMidnight = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    let latestDay = endMidnight > todayMidnight && startMidnight <= todayMidnight ? todayMidnight : endMidnight;
+    for (const entry of this.currentEntries) {
+      const eDate = new Date(entry.startDateTime.getFullYear(), entry.startDateTime.getMonth(), entry.startDateTime.getDate());
+      if (eDate > latestDay && eDate <= endMidnight) {
+        latestDay = eDate;
+      }
+    }
+    const datesDesc = [];
+    const current = new Date(latestDay);
+    while (current >= startMidnight) {
+      datesDesc.push(TableParser.getDateString(current));
+      current.setDate(current.getDate() - 1);
+    }
+    if (datesDesc.length === 0) {
+      this.diaryTimelineContainer.createDiv({
+        text: "No days in selected period.",
+        cls: "reports-empty"
+      });
+      return;
+    }
+    const dayEntriesMap = /* @__PURE__ */ new Map();
+    for (const entry of this.currentEntries) {
+      const dateStr = entry.date || TableParser.getDateString(entry.startDateTime);
+      if (!dateStr)
+        continue;
+      let list4 = dayEntriesMap.get(dateStr);
+      if (!list4) {
+        list4 = [];
+        dayEntriesMap.set(dateStr, list4);
+      }
+      list4.push(entry);
+    }
+    const schema = this.dataManager.getSchema();
+    const categoryField = schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+    }) || schema.fields.find((f) => f.id === "category") || schema.fields[0];
+    const activityField = schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "title";
+    }) || schema.fields.find((f) => f.id === "activity_name");
+    const timeline = this.diaryTimelineContainer.createDiv("reports-timeline");
+    const todayStr = TableParser.getDateString(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = TableParser.getDateString(yesterday);
+    for (const dateStr of datesDesc) {
+      const dayItem = timeline.createDiv("reports-timeline-item");
+      const marker = dayItem.createDiv("reports-timeline-marker");
+      marker.createSpan("reports-timeline-dot");
+      const card = dayItem.createDiv("reports-timeline-card");
+      const cardHeader = card.createDiv("reports-timeline-header");
+      const dateWrapper = cardHeader.createDiv("reports-timeline-date-wrapper");
+      const [year, month, day] = dateStr.split("-").map(Number);
+      const dateObj = new Date(year, month - 1, day);
+      const friendlyDate = dateObj.toLocaleDateString(void 0, {
+        weekday: "short",
+        month: "short",
+        day: "numeric"
+      });
+      dateWrapper.createSpan({ text: dateStr, cls: "reports-timeline-date-iso" });
+      dateWrapper.createSpan({ text: ` (${friendlyDate})`, cls: "reports-timeline-date-friendly" });
+      if (dateStr === todayStr) {
+        cardHeader.createSpan({ text: "Today", cls: "reports-timeline-badge reports-timeline-badge-today" });
+      } else if (dateStr === yesterdayStr) {
+        cardHeader.createSpan({ text: "Yesterday", cls: "reports-timeline-badge" });
+      }
+      const diary = this.currentDiaries.get(dateStr);
+      const hasDiary = !!(diary && diary.content && diary.content.trim().length > 0);
+      const editBtn = cardHeader.createEl("button", {
+        cls: "reports-timeline-diary-btn reports-btn",
+        text: hasDiary ? "Edit Diary" : "Write Diary"
+      });
+      editBtn.addEventListener("click", () => {
+        new DiaryModal(this.app, this.dataManager, dateStr, () => {
+          void this.loadReport();
+        }).open();
+      });
+      const diarySection = card.createDiv("reports-timeline-diary-section");
+      if (hasDiary) {
+        const diaryText = diarySection.createDiv("reports-timeline-diary-text");
+        diaryText.setText(diary.content.trim());
+      } else {
+        diarySection.createDiv({ text: "(None)", cls: "reports-timeline-empty-text" });
+      }
+      const activitiesSection = card.createDiv("reports-timeline-activities-section");
+      const actHeadingRow = activitiesSection.createDiv("reports-timeline-activities-header");
+      actHeadingRow.createDiv({ text: "Activities (time spent)", cls: "reports-timeline-subheading" });
+      const dayEntries = dayEntriesMap.get(dateStr) || [];
+      if (dayEntries.length === 0) {
+        activitiesSection.createDiv({ text: "(None)", cls: "reports-timeline-empty-text" });
+      } else {
+        const dayTotalMinutes = dayEntries.reduce((sum, e) => sum + e.durationMinutes, 0);
+        actHeadingRow.createSpan({
+          text: `Total: ${this.formatDuration(dayTotalMinutes)}`,
+          cls: "reports-timeline-total-badge"
+        });
+        const actList = activitiesSection.createDiv("reports-timeline-activities-list");
+        const actMap = /* @__PURE__ */ new Map();
+        for (const entry of dayEntries) {
+          const catVal = categoryField ? getEntryFieldValue(entry, categoryField.id, schema) : "(Unspecified)";
+          const actVal = activityField ? getEntryFieldValue(entry, activityField.id, schema) : "(None)";
+          const displayName = actVal && actVal !== "(None)" ? actVal : catVal;
+          const key = `${catVal}:::${displayName}`;
+          let existing = actMap.get(key);
+          if (!existing) {
+            const color2 = categoryField ? getNodeColor(categoryField.id, catVal, schema) : "#888888";
+            existing = {
+              name: displayName,
+              category: catVal,
+              color: color2,
+              durationMinutes: 0
+            };
+            actMap.set(key, existing);
+          }
+          existing.durationMinutes += entry.durationMinutes;
+        }
+        const sortedActs = Array.from(actMap.values()).sort((a, b) => b.durationMinutes - a.durationMinutes);
+        for (const act of sortedActs) {
+          const pill = actList.createDiv("reports-timeline-act-pill");
+          const dot = pill.createSpan("reports-color-dot");
+          dot.style.backgroundColor = act.color;
+          pill.createSpan({ text: act.name, cls: "reports-timeline-act-name" });
+          if (act.category && act.category !== act.name && act.category !== "(Unspecified)") {
+            pill.createSpan({ text: `(${act.category})`, cls: "reports-timeline-act-cat" });
+          }
+          pill.createSpan({
+            text: this.formatDuration(act.durationMinutes),
+            cls: "reports-timeline-act-time"
+          });
         }
       }
     }
