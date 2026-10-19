@@ -13842,8 +13842,6 @@ var TimelineView = class extends import_obsidian6.ItemView {
     this.entryDragOriginalTop = 0;
     this.entryDragOriginalHeight = 0;
     this.entryDragTooltipEl = null;
-    // Track user-expanded collapsible cards (e.g., Sleep entries)
-    this.expandedEntryKeys = /* @__PURE__ */ new Set();
     /**
      * Handle entry drag movement - mouse version
      */
@@ -13896,10 +13894,12 @@ var TimelineView = class extends import_obsidian6.ItemView {
     this.centerDate.setHours(0, 0, 0, 0);
     await this.render();
     requestAnimationFrame(() => {
-      const targetOffset = this.visibleDaysBuffer * this.dayHeight + this.settings.dayStartHour * this.settings.hourHeight;
-      this.timelineContainer.scrollTop = targetOffset;
+      const viewportHeight = this.timelineContainer.clientHeight;
+      const hourOffset = this.visibleDaysBuffer * this.dayHeight + 10 * this.settings.hourHeight;
+      const targetOffset = hourOffset - viewportHeight / 2;
+      this.timelineContainer.scrollTop = Math.max(0, targetOffset);
       this.updateVisibleDateLabel();
-      Logger.log("onOpen: scrolled to today, offset=", targetOffset);
+      Logger.log("onOpen: scrolled to today (10am centered), offset=", targetOffset);
     });
   }
   async onClose() {
@@ -13987,7 +13987,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
       cls: "timeline-btn",
       attr: { "aria-label": "Go to today" }
     });
-    todayBtn.addEventListener("click", () => this.scrollToDate(new Date()));
+    todayBtn.addEventListener("click", () => this.scrollToToday());
     const nowBtn = controls.createEl("button", {
       text: "Now",
       cls: "timeline-btn timeline-btn-primary",
@@ -14281,24 +14281,13 @@ var TimelineView = class extends import_obsidian6.ItemView {
     const totalDurationMinutes = entry.durationMinutes;
     const top = dayTopOffset + cardStartMinutes / 60 * this.settings.hourHeight;
     const height = Math.max(totalDurationMinutes / 60 * this.settings.hourHeight, 50);
-    const isSleep = this.isSleepEntry(entry);
-    const entryKey = `${entry.date}_${entry.lineNumber}_${entry.start}`;
-    const isCollapsedSleep = isSleep && !this.expandedEntryKeys.has(entryKey);
     const card = this.entriesContainer.createDiv("timeline-entry-card");
     card.style.top = `${top}px`;
-    card.style.height = isCollapsedSleep ? "38px" : `${height}px`;
+    card.style.height = `${height}px`;
     card.dataset.entryDate = entry.date;
     card.dataset.entryLine = String(entry.lineNumber);
     const cardColor = this.getEntryColor(entry);
     card.style.setProperty("--card-color", cardColor);
-    if (isSleep) {
-      card.addClass("entry-sleep");
-      if (isCollapsedSleep) {
-        card.addClass("entry-sleep-collapsed");
-      } else {
-        card.addClass("entry-sleep-expanded");
-      }
-    }
     const is15m = totalDurationMinutes <= 15;
     if (is15m) {
       card.addClass("entry-15m");
@@ -14312,15 +14301,11 @@ var TimelineView = class extends import_obsidian6.ItemView {
     const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
     card.setAttribute("title", this.getEntryTooltip(entry));
     const header = card.createDiv("entry-card-header");
-    if (isSleep) {
-      const sleepTag = header.createSpan("entry-sleep-tag");
-      sleepTag.setText("\u{1F319} " + (this.getEntryTitle(entry) || "Sleep"));
-    }
     const timeText = header.createSpan("entry-time-text");
     timeText.setText(timeRange);
     const durationBadge = header.createSpan("entry-duration-badge");
     durationBadge.setText(this.formatDuration(entry.durationMinutes));
-    if (is15m && !isSleep) {
+    if (is15m) {
       const tinyTags = header.createDiv("entry-tiny-tags");
       const badges = this.getEntryBadges(entry);
       if (badges.length > 0) {
@@ -14335,29 +14320,6 @@ var TimelineView = class extends import_obsidian6.ItemView {
       inlineTitle.setText(this.getEntryTitle(entry));
     }
     const icons = header.createDiv("entry-header-icons");
-    if (isSleep) {
-      const toggleIcon = icons.createSpan("entry-icon entry-icon-toggle");
-      (0, import_obsidian6.setIcon)(toggleIcon, isCollapsedSleep ? "chevron-down" : "chevron-up");
-      toggleIcon.setAttribute("title", isCollapsedSleep ? "Expand sleep entry" : "Collapse sleep entry");
-      toggleIcon.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (this.expandedEntryKeys.has(entryKey)) {
-          this.expandedEntryKeys.delete(entryKey);
-          card.removeClass("entry-sleep-expanded");
-          card.addClass("entry-sleep-collapsed");
-          card.style.height = "38px";
-          (0, import_obsidian6.setIcon)(toggleIcon, "chevron-down");
-          toggleIcon.setAttribute("title", "Expand sleep entry");
-        } else {
-          this.expandedEntryKeys.add(entryKey);
-          card.removeClass("entry-sleep-collapsed");
-          card.addClass("entry-sleep-expanded");
-          card.style.height = `${height}px`;
-          (0, import_obsidian6.setIcon)(toggleIcon, "chevron-up");
-          toggleIcon.setAttribute("title", "Collapse sleep entry");
-        }
-      });
-    }
     if (entry.linkedNote) {
       const noteIcon = icons.createSpan("entry-icon");
       (0, import_obsidian6.setIcon)(noteIcon, "paperclip");
@@ -14478,8 +14440,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
     this.entryDragCard = card;
     this.entryDragStartY = clientY;
     this.entryDragOriginalTop = parseFloat(card.style.top);
-    const isCollapsedSleep = card.classList.contains("entry-sleep-collapsed");
-    this.entryDragOriginalHeight = isCollapsedSleep ? Math.max(entry.durationMinutes / 60 * this.settings.hourHeight, 50) : parseFloat(card.style.height);
+    this.entryDragOriginalHeight = parseFloat(card.style.height);
     card.addClass("is-dragging");
     this.entryDragTooltipEl = this.timelineInner.createDiv("timeline-drag-tooltip");
     this.updateEntryDragTooltip();
@@ -14526,9 +14487,8 @@ var TimelineView = class extends import_obsidian6.ItemView {
     const card = this.entryDragCard;
     const newTop = parseFloat(card.style.top);
     const newHeight = parseFloat(card.style.height);
-    const isCollapsedSleep = card.classList.contains("entry-sleep-collapsed");
     const newStartMinutes = newTop / this.settings.hourHeight * 60;
-    const newDurationMinutes = isCollapsedSleep ? entry.durationMinutes : newHeight / this.settings.hourHeight * 60;
+    const newDurationMinutes = newHeight / this.settings.hourHeight * 60;
     const dayIndex = Math.floor(newTop / this.dayHeight);
     const minutesInDay = newStartMinutes - dayIndex * 24 * 60;
     const newDate = new Date(this.centerDate);
@@ -14587,9 +14547,8 @@ var TimelineView = class extends import_obsidian6.ItemView {
       return;
     const newTop = parseFloat(this.entryDragCard.style.top);
     const newHeight = parseFloat(this.entryDragCard.style.height);
-    const isCollapsedSleep = this.entryDragCard.classList.contains("entry-sleep-collapsed");
     const newStartMinutes = newTop / this.settings.hourHeight * 60;
-    const newDurationMinutes = isCollapsedSleep && this.entryDragEntry ? this.entryDragEntry.durationMinutes : newHeight / this.settings.hourHeight * 60;
+    const newDurationMinutes = newHeight / this.settings.hourHeight * 60;
     const dayIndex = Math.floor(newTop / this.dayHeight);
     const minutesInDay = newStartMinutes - dayIndex * 24 * 60;
     const endMinutesInDay = minutesInDay + newDurationMinutes;
@@ -14603,15 +14562,28 @@ var TimelineView = class extends import_obsidian6.ItemView {
     this.entryDragTooltipEl.style.top = `${newTop + newHeight + 8}px`;
   }
   /**
-   * Scroll to a specific date, positioning dayStartHour at the top
+   * Scroll to today, centering 10:00 AM vertically in the viewport
    */
-  scrollToDate(date) {
+  scrollToToday() {
+    this.scrollToDate(new Date(), 10);
+  }
+  /**
+   * Scroll to a specific date, positioning dayStartHour at the top (or centerHour vertically centered if provided)
+   */
+  scrollToDate(date, centerHour) {
     this.centerDate = new Date(date);
     this.centerDate.setHours(0, 0, 0, 0);
     void this.loadVisibleRange().then(() => {
       this.renderVisibleDays();
-      const targetOffset = this.visibleDaysBuffer * this.dayHeight + this.settings.dayStartHour * this.settings.hourHeight;
-      this.timelineContainer.scrollTop = targetOffset;
+      if (centerHour !== void 0) {
+        const viewportHeight = this.timelineContainer.clientHeight;
+        const hourOffset = this.visibleDaysBuffer * this.dayHeight + centerHour * this.settings.hourHeight;
+        const targetScroll = hourOffset - viewportHeight / 2;
+        this.timelineContainer.scrollTop = Math.max(0, targetScroll);
+      } else {
+        const targetOffset = this.visibleDaysBuffer * this.dayHeight + this.settings.dayStartHour * this.settings.hourHeight;
+        this.timelineContainer.scrollTop = targetOffset;
+      }
       this.updateVisibleDateLabel();
     });
   }
@@ -14676,32 +14648,6 @@ var TimelineView = class extends import_obsidian6.ItemView {
     const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const day = date.getDate().toString().padStart(2, "0");
     return `${year}-${month}-${day}`;
-  }
-  /**
-   * Check if an entry represents a Sleep activity
-   */
-  isSleepEntry(entry) {
-    var _a;
-    const schema = this.dataManager.getSchema();
-    const colorField = schema.fields.find((f) => {
-      var _a2;
-      return ((_a2 = f.ui) == null ? void 0 : _a2.timelineRole) === "color";
-    }) || schema.fields.find((f) => f.id === "category");
-    let categoryVal = "";
-    if (colorField && ((_a = entry.fields) == null ? void 0 : _a[colorField.id])) {
-      const v = entry.fields[colorField.id];
-      categoryVal = Array.isArray(v) ? v[0] || "" : v;
-    } else if (entry.activity) {
-      categoryVal = entry.activity;
-    }
-    if (categoryVal && categoryVal.trim().toLowerCase() === "sleep") {
-      return true;
-    }
-    const title = this.getEntryTitle(entry);
-    if (title && title.trim().toLowerCase() === "sleep") {
-      return true;
-    }
-    return false;
   }
   /**
    * Get primary color for an entry based on schema field with timelineRole === 'color' (or Category)

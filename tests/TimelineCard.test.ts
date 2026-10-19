@@ -251,24 +251,8 @@ describe('TimelineView Dynamic Card Helpers', () => {
         });
     });
 
-    describe('Sleep collapsible card behavior', () => {
-        it('identifies sleep entries by category or title', () => {
-            const sleepEntry1 = createSampleEntry({
-                fields: { category: 'Sleep', activity_name: 'Night sleep' },
-            });
-            const sleepEntry2 = createSampleEntry({
-                fields: { category: 'Personal', activity_name: 'Sleep' },
-            });
-            const regularEntry = createSampleEntry({
-                fields: { category: 'Deep Work', activity_name: 'Coding' },
-            });
-
-            expect((view as any).isSleepEntry(sleepEntry1)).toBe(true);
-            expect((view as any).isSleepEntry(sleepEntry2)).toBe(true);
-            expect((view as any).isSleepEntry(regularEntry)).toBe(false);
-        });
-
-        it('renders sleep entry as collapsed card by default with toggle button and moon icon', () => {
+    describe('Regular category behavior for Sleep', () => {
+        it('renders sleep entries as regular cards without collapsible behavior', () => {
             const sleepEntry = createSampleEntry({
                 start: '23:00',
                 end: '07:00',
@@ -282,27 +266,53 @@ describe('TimelineView Dynamic Card Helpers', () => {
 
             const card = container.querySelector('.timeline-entry-card') as HTMLElement;
             expect(card).toBeDefined();
-            expect(card.classList.contains('entry-sleep')).toBe(true);
-            expect(card.classList.contains('entry-sleep-collapsed')).toBe(true);
-            expect(card.style.height).toBe('38px');
-
-            const sleepTag = card.querySelector('.entry-sleep-tag');
-            expect(sleepTag).toBeDefined();
-            expect(sleepTag?.textContent).toContain('🌙');
-
-            const toggleIcon = card.querySelector('.entry-icon-toggle') as HTMLElement;
-            expect(toggleIcon).toBeDefined();
-
-            // Click toggle to expand
-            toggleIcon.click();
-            expect(card.classList.contains('entry-sleep-expanded')).toBe(true);
+            expect(card.classList.contains('entry-sleep')).toBe(false);
             expect(card.classList.contains('entry-sleep-collapsed')).toBe(false);
-            expect(parseFloat(card.style.height)).toBeGreaterThan(38);
+            // 480 mins at default 200px/hr = 8 * 200 = 1600px
+            expect(parseFloat(card.style.height)).toBe(1600);
+            expect(card.querySelector('.entry-sleep-tag')).toBeNull();
+            expect(card.querySelector('.entry-icon-toggle')).toBeNull();
+        });
+    });
 
-            // Click toggle to collapse again
-            toggleIcon.click();
-            expect(card.classList.contains('entry-sleep-collapsed')).toBe(true);
-            expect(card.style.height).toBe('38px');
+    describe('scrollToToday and vertical centering', () => {
+        it('scrollToToday centers 10:00 AM vertically in the viewport', async () => {
+            const container = document.createElement('div');
+            Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
+            (view as any).timelineContainer = container;
+            (view as any).visibleDaysBuffer = 3;
+            (view as any).dayHeight = 24 * 200;
+            (view as any).settings.hourHeight = 200;
+
+            (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
+            (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
+            (view as any).updateVisibleDateLabel = jest.fn();
+
+            view.scrollToToday();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            // targetScroll = (3 * 4800 + 10 * 200) - (600 / 2) = 14400 + 2000 - 300 = 16100
+            expect(container.scrollTop).toBe(16100);
+        });
+
+        it('scrollToDate positions dayStartHour at the top when centerHour is not provided', async () => {
+            const container = document.createElement('div');
+            Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
+            (view as any).timelineContainer = container;
+            (view as any).visibleDaysBuffer = 3;
+            (view as any).dayHeight = 24 * 200;
+            (view as any).settings.hourHeight = 200;
+            (view as any).settings.dayStartHour = 6;
+
+            (view as any).loadVisibleRange = jest.fn().mockImplementation(async () => {});
+            (view as any).renderVisibleDays = jest.fn().mockImplementation(() => {});
+            (view as any).updateVisibleDateLabel = jest.fn();
+
+            view.scrollToDate(new Date(2026, 9, 18));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            // targetOffset = 3 * 4800 + 6 * 200 = 14400 + 1200 = 15600
+            expect(container.scrollTop).toBe(15600);
         });
     });
 });
