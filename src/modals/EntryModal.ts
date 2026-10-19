@@ -431,7 +431,11 @@ export class EntryModal extends Modal {
                     const currentVal = typeof this.fieldValues[field.id] === 'string'
                         ? (this.fieldValues[field.id] as string)
                         : '';
-                    dropdown.setValue(currentVal);
+                    const matchingOpt = field.options?.find(
+                        o => o.id === currentVal || o.label.toLowerCase() === currentVal.toLowerCase()
+                    );
+                    const selectedId = matchingOpt ? matchingOpt.id : currentVal;
+                    dropdown.setValue(selectedId);
                     dropdown.onChange((val) => {
                         this.fieldValues[field.id] = val;
                     });
@@ -604,9 +608,15 @@ export class EntryModal extends Modal {
         const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
             || schema.fields.find(f => f.id === 'category');
         if (colorField) {
-            const val = this.fieldValues[colorField.id];
-            if (Array.isArray(val)) return val[0] || '';
-            if (typeof val === 'string') return val;
+            const rawVal = this.fieldValues[colorField.id];
+            const val = Array.isArray(rawVal) ? rawVal[0] : (typeof rawVal === 'string' ? rawVal : '');
+            if (val && colorField.options) {
+                const opt = colorField.options.find(
+                    o => o.id === val || o.label.toLowerCase() === val.toLowerCase()
+                );
+                if (opt) return opt.label;
+            }
+            return val || '';
         }
         return '';
     }

@@ -225,13 +225,18 @@ export class SchemaManager {
         const reportDimensions: { order: number; id: string }[] = [];
 
         // Parse rows
+        let mainTableEndIndex = headerLineIndex + 1;
         for (let i = headerLineIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line.startsWith('|')) {
                 // End of table
-                if (fields.length > 0) break;
+                if (fields.length > 0) {
+                    mainTableEndIndex = i;
+                    break;
+                }
                 continue;
             }
+            mainTableEndIndex = i + 1;
             if (line.includes('---')) {
                 // Table separator line
                 continue;
@@ -338,12 +343,12 @@ export class SchemaManager {
         let categoryCol = -1;
         let activityCol = -1;
 
-        for (let i = 0; i < lines.length; i++) {
+        for (let i = mainTableEndIndex; i < lines.length; i++) {
             const line = lines[i].trim();
-            // Header must start with |, contain category and activities/candidates/presets/names,
-            // and NOT be the main fields table (which has "field name" or "type" or "required")
-            if (line.startsWith('|') && !/field/i.test(line) && !/required/i.test(line) && /category/i.test(line) &&
-                (/activit/i.test(line) || /candidate/i.test(line) || /preset/i.test(line) || /name/i.test(line))) {
+            const nextLine = (lines[i + 1] || '').trim();
+            // Header must start with |, have next line as markdown delimiter (---|---),
+            // and have columns containing category and activity/candidates/presets/names
+            if (line.startsWith('|') && nextLine.startsWith('|') && nextLine.includes('---')) {
                 const headerCols = line.split('|').slice(1, -1).map(c => c.trim().toLowerCase());
                 const catIdx = headerCols.findIndex(h => h.includes('category'));
                 const actIdx = headerCols.findIndex(h => h.includes('activit') || h.includes('candidate') || h.includes('preset') || h.includes('name'));
@@ -539,9 +544,10 @@ ${presetsSection}
         if (!presets) return [];
 
         if (category && category.trim()) {
-            const normalized = category.trim().toLowerCase();
+            const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const target = clean(category);
             for (const [catName, activities] of Object.entries(presets)) {
-                if (catName.trim().toLowerCase() === normalized) {
+                if (clean(catName) === target) {
                     return [...activities];
                 }
             }

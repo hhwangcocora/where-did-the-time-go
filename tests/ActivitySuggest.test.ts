@@ -16,6 +16,7 @@ describe('ActivitySuggest', () => {
         (global as any).window = dom.window;
         (global as any).document = dom.window.document;
         (global as any).HTMLElement = dom.window.HTMLElement;
+        (global as any).Event = dom.window.Event;
         setupDomPrototypes();
 
         inputEl = dom.window.document.getElementById('activity') as HTMLInputElement;
@@ -55,6 +56,20 @@ describe('ActivitySuggest', () => {
 
         const results = suggest.getSuggestions('cod');
         expect(results).toEqual(['Coding', 'Code Review']);
+    });
+
+    test('prioritizes prefix matches over contains matches (e.g. "C" shows Coding and Code Review before Architecture)', () => {
+        getCandidatesMock.mockReturnValue(['Architecture', 'Coding', 'Code Review']);
+        const suggest = new ActivitySuggest(
+            {} as App,
+            inputEl,
+            getCandidatesMock,
+            onSelectMock,
+            getAllCandidatesMock
+        );
+
+        const results = suggest.getSuggestions('c');
+        expect(results).toEqual(['Coding', 'Code Review', 'Architecture']);
     });
 
     test('falls back to all candidates when category candidates do not match', () => {

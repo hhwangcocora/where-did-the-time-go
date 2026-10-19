@@ -14,17 +14,17 @@ Changes are saved and applied automatically.
 
 ## Predefined Activities
 
-| Category | Activities |
-| :--- | :--- |
-| Deep Work | Coding, Architecture, Code Review, Debugging, Writing |
-| Shallow Work | Email, Catch-up, Admin, Status Updates |
-| Fitness | Running, Weightlifting, Yoga, Cycling, Walking |
-| Learning | Reading, Course, Research |
-| Personal | Errand, Meal, Call |
-| Entertainment | Gaming, Gaming (birb), Movies, Music |
-| Chores | grocery shopping, vacuum cleaned the floor, Cleaning, Laundry, Cooking |
-| Travel | Flight, Train, Road Trip, Commute |
-| Work | Planning, Meeting, 1:1, Sync |
+| Category      | Activities                                                             |
+| :------------ | :--------------------------------------------------------------------- |
+| Deep Work     | Coding, Architecture, Code Review, Debugging, Writing                  |
+| Shallow Work  | Email, Catch-up, Admin, Status Updates                                 |
+| Fitness       | Running, Weightlifting, Yoga, Cycling, Walking                         |
+| Learning      | Reading, Course, Research                                              |
+| Personal      | Errand, Meal, Call                                                     |
+| Entertainment | Gaming, Gaming (birb), Movies, Music                                   |
+| Chores        | grocery shopping, vacuum cleaned the floor, Cleaning, Laundry, Cooking |
+| Travel        | Flight, Train, Road Trip, Commute                                      |
+| Work          | Planning, Meeting, 1:1, Sync                                           |
 
 > [!TIP]
 > - **Type**: `enum` or `string`.

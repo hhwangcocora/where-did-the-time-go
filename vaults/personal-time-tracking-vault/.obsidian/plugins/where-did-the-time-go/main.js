@@ -11985,13 +11985,17 @@ var SchemaManager = class {
     }
     const fields = [];
     const reportDimensions = [];
+    let mainTableEndIndex = headerLineIndex + 1;
     for (let i = headerLineIndex + 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line.startsWith("|")) {
-        if (fields.length > 0)
+        if (fields.length > 0) {
+          mainTableEndIndex = i;
           break;
+        }
         continue;
       }
+      mainTableEndIndex = i + 1;
       if (line.includes("---")) {
         continue;
       }
@@ -12089,9 +12093,10 @@ var SchemaManager = class {
     let presetHeaderLine = -1;
     let categoryCol = -1;
     let activityCol = -1;
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = mainTableEndIndex; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (line.startsWith("|") && !/field/i.test(line) && !/required/i.test(line) && /category/i.test(line) && (/activit/i.test(line) || /candidate/i.test(line) || /preset/i.test(line) || /name/i.test(line))) {
+      const nextLine = (lines[i + 1] || "").trim();
+      if (line.startsWith("|") && nextLine.startsWith("|") && nextLine.includes("---")) {
         const headerCols = line.split("|").slice(1, -1).map((c) => c.trim().toLowerCase());
         const catIdx = headerCols.findIndex((h) => h.includes("category"));
         const actIdx = headerCols.findIndex((h) => h.includes("activit") || h.includes("candidate") || h.includes("preset") || h.includes("name"));
@@ -12278,9 +12283,10 @@ ${presetsSection}
     if (!presets)
       return [];
     if (category && category.trim()) {
-      const normalized = category.trim().toLowerCase();
+      const clean = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const target = clean(category);
       for (const [catName, activities] of Object.entries(presets)) {
-        if (catName.trim().toLowerCase() === normalized) {
+        if (clean(catName) === target) {
           return [...activities];
         }
       }
@@ -12678,9 +12684,23 @@ var import_obsidian4 = require("obsidian");
 var ActivitySuggest = class extends import_obsidian4.AbstractInputSuggest {
   constructor(app, inputEl, getCandidates, onSelectCallback, getAllCandidates) {
     super(app, inputEl);
+    this.inputEl = inputEl;
     this.getCandidates = getCandidates;
     this.onSelectCallback = onSelectCallback;
     this.getAllCandidates = getAllCandidates;
+  }
+  filterCandidates(items, lower) {
+    const prefix = [];
+    const contains = [];
+    for (const item of items) {
+      const itemLower = item.toLowerCase();
+      if (itemLower.startsWith(lower)) {
+        prefix.push(item);
+      } else if (itemLower.includes(lower)) {
+        contains.push(item);
+      }
+    }
+    return [...prefix, ...contains];
   }
   getSuggestions(query) {
     const candidates = this.getCandidates();
@@ -12688,13 +12708,13 @@ var ActivitySuggest = class extends import_obsidian4.AbstractInputSuggest {
     if (!lower) {
       return candidates;
     }
-    const matches = candidates.filter((item) => item.toLowerCase().includes(lower));
+    const matches = this.filterCandidates(candidates, lower);
     if (matches.length > 0) {
       return matches;
     }
     if (this.getAllCandidates) {
       const allCandidates = this.getAllCandidates();
-      const allMatches = allCandidates.filter((item) => item.toLowerCase().includes(lower));
+      const allMatches = this.filterCandidates(allCandidates, lower);
       if (allMatches.length > 0) {
         return allMatches;
       }
@@ -12705,7 +12725,13 @@ var ActivitySuggest = class extends import_obsidian4.AbstractInputSuggest {
     el.setText(value);
   }
   selectSuggestion(value, _evt) {
+    var _a, _b;
     this.setValue(value);
+    if (this.inputEl) {
+      this.inputEl.value = value;
+      const EventClass = ((_b = (_a = this.inputEl.ownerDocument) == null ? void 0 : _a.defaultView) == null ? void 0 : _b.Event) || Event;
+      this.inputEl.dispatchEvent(new EventClass("input", { bubbles: true }));
+    }
     this.onSelectCallback(value);
     this.close();
   }
@@ -13011,6 +13037,7 @@ var EntryModal = class extends import_obsidian5.Modal {
         });
       } else {
         setting.addDropdown((dropdown) => {
+          var _a2;
           if (!field.required) {
             dropdown.addOption("", "(None)");
           }
@@ -13020,7 +13047,11 @@ var EntryModal = class extends import_obsidian5.Modal {
             }
           }
           const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
-          dropdown.setValue(currentVal);
+          const matchingOpt = (_a2 = field.options) == null ? void 0 : _a2.find(
+            (o) => o.id === currentVal || o.label.toLowerCase() === currentVal.toLowerCase()
+          );
+          const selectedId = matchingOpt ? matchingOpt.id : currentVal;
+          dropdown.setValue(selectedId);
           dropdown.onChange((val) => {
             this.fieldValues[field.id] = val;
           });
@@ -13174,11 +13205,16 @@ var EntryModal = class extends import_obsidian5.Modal {
       return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
     }) || schema.fields.find((f) => f.id === "category");
     if (colorField) {
-      const val = this.fieldValues[colorField.id];
-      if (Array.isArray(val))
-        return val[0] || "";
-      if (typeof val === "string")
-        return val;
+      const rawVal = this.fieldValues[colorField.id];
+      const val = Array.isArray(rawVal) ? rawVal[0] : typeof rawVal === "string" ? rawVal : "";
+      if (val && colorField.options) {
+        const opt = colorField.options.find(
+          (o) => o.id === val || o.label.toLowerCase() === val.toLowerCase()
+        );
+        if (opt)
+          return opt.label;
+      }
+      return val || "";
     }
     return "";
   }

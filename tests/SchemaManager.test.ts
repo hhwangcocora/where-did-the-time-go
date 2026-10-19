@@ -342,8 +342,8 @@ describe('SchemaManager', () => {
         const schemaWithPresets = `# Activity Tracking Schema
 | Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Category | enum | Yes | Deep Work, Fitness, Sleep | No | Color | 1 | |
-| Activity Name | string | Yes | | No | Title | 2 | |
+| Category | enum | Yes | Deep Work, Fitness, Sleep | No | Color | 1 | activity |
+| Activity Name | string | Yes | | No | Title | 2 | task, description |
 
 ## Predefined Activities
 
@@ -370,8 +370,10 @@ describe('SchemaManager', () => {
             expect(schemaManager.getActivityCandidates('Deep Work')).toEqual(['Coding', 'System Architecture', 'Code Review']);
         });
 
-        test('getActivityCandidates is case-insensitive', () => {
+        test('getActivityCandidates is case-insensitive and handles kebab-case / snake_case', () => {
             expect(schemaManager.getActivityCandidates('deep work')).toEqual(['Coding', 'System Architecture', 'Code Review']);
+            expect(schemaManager.getActivityCandidates('deep-work')).toEqual(['Coding', 'System Architecture', 'Code Review']);
+            expect(schemaManager.getActivityCandidates('deep_work')).toEqual(['Coding', 'System Architecture', 'Code Review']);
             expect(schemaManager.getActivityCandidates('FITNESS')).toEqual(['Running', 'Weightlifting']);
         });
 
@@ -411,6 +413,32 @@ describe('SchemaManager', () => {
             expect(content).toContain('| Category | Activities |');
             expect(content).toContain('| Deep Work | Coding, Debugging |');
             expect(content).toContain('| Hobbies | Painting |');
+        });
+
+        test('correctly parses actual vault Schema.md file from disk', async () => {
+            const fs = await import('fs');
+            const path = await import('path');
+            const diskSchema = fs.readFileSync(
+                path.resolve(process.cwd(), 'vaults/personal-time-tracking-vault/TimeTracking/Schema.md'),
+                'utf8'
+            );
+            files.set('TimeTracking/Schema.md', diskSchema);
+            await schemaManager.loadSchema();
+
+            expect(schemaManager.getActivityCandidates('Deep Work')).toEqual([
+                'Coding',
+                'Architecture',
+                'Code Review',
+                'Debugging',
+                'Writing',
+            ]);
+            expect(schemaManager.getActivityCandidates('deep-work')).toEqual([
+                'Coding',
+                'Architecture',
+                'Code Review',
+                'Debugging',
+                'Writing',
+            ]);
         });
     });
 });
