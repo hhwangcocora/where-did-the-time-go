@@ -9,7 +9,6 @@ dist
 vaults/*/.obsidian/workspace.json
 vaults/*/.obsidian/workspace-mobile.json
 vaults/*/.obsidian/cache/
-vaults/where-did-the-time-go-vault/
 CLAUDE.md
 
 # Local convenience symlink to personal vault checkout
