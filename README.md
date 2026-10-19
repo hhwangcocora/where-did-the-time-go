@@ -1,7 +1,5 @@
 # Where Did The Time Go?
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
-
 **A visual personal time tracking and daily reflection plugin for Obsidian.** An interactive timeline to log your focus blocks, daily reflection diaries co-located with your tracked activities, and configurable multi-level reports to see where your time went. Your data stays in your vault as plain markdown tables and journals — no cloud, no sync, no subscriptions.
 
 ## Why This Exists
