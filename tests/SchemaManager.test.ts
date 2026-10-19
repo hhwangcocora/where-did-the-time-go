@@ -154,6 +154,23 @@ describe('SchemaManager', () => {
         expect(locField?.options?.[2].color).toBe(FIXED_LOCATION_COLOR);
     });
 
+    test('does not assign defaultValue to multi-select enum fields parsed from Schema.md', async () => {
+        const customMarkdown = `# Schema
+| Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Category | enum | Yes | Deep Work, Fitness | No | Color | 1 | |
+| With Who | enum | No | Bob, Alice, Charlie | Yes | Content | | |
+`;
+        files.set('TimeTracking/Schema.md', customMarkdown);
+
+        const schema = await schemaManager.loadSchema();
+        const catField = schema.fields.find(f => f.id === 'category');
+        const withWhoField = schema.fields.find(f => f.id === 'with_who');
+
+        expect(catField?.defaultValue).toBe('Deep Work');
+        expect(withWhoField?.defaultValue).toBeUndefined();
+    });
+
     test('recovers safely from invalid or empty table in Schema.md on initial load', async () => {
         files.set('TimeTracking/Schema.md', '# Just a heading with no table');
 

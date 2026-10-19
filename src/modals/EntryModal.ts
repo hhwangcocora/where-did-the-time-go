@@ -220,16 +220,21 @@ export class EntryModal extends Modal {
 
             // Initialize defaults from schema
             for (const field of this.schema.fields) {
-                if (field.defaultValue !== undefined && field.defaultValue !== null) {
+                if (field.multiple) {
+                    // For multi-select fields (including multi-select enums), never pre-select any value unless an array default is explicitly configured
+                    if (Array.isArray(field.defaultValue) && field.defaultValue.length > 0) {
+                        this.fieldValues[field.id] = [...field.defaultValue];
+                    } else {
+                        this.fieldValues[field.id] = [];
+                    }
+                } else if (field.defaultValue !== undefined && field.defaultValue !== null) {
                     this.fieldValues[field.id] = field.defaultValue;
-                } else if (field.type === 'enum' && !field.multiple && field.options && field.options.length > 0) {
+                } else if (field.type === 'enum' && field.options && field.options.length > 0) {
                     if (field.required) {
                         this.fieldValues[field.id] = field.options[0].id;
                     } else {
                         this.fieldValues[field.id] = '';
                     }
-                } else if (field.multiple) {
-                    this.fieldValues[field.id] = [];
                 } else {
                     this.fieldValues[field.id] = '';
                 }

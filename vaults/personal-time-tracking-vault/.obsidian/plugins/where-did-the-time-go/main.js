@@ -11996,7 +11996,7 @@ var SchemaManager = class {
             label: optLabel,
             color: isLocation ? FIXED_LOCATION_COLOR : getColorForValue(optLabel)
           }));
-          if (options.length > 0) {
+          if (options.length > 0 && !multiple && required) {
             defaultValue = options[0].label;
           }
         }
@@ -12665,16 +12665,20 @@ var EntryModal = class extends import_obsidian4.Modal {
       }
       this.durationValue = this.calculateDurationFromDates();
       for (const field of this.schema.fields) {
-        if (field.defaultValue !== void 0 && field.defaultValue !== null) {
+        if (field.multiple) {
+          if (Array.isArray(field.defaultValue) && field.defaultValue.length > 0) {
+            this.fieldValues[field.id] = [...field.defaultValue];
+          } else {
+            this.fieldValues[field.id] = [];
+          }
+        } else if (field.defaultValue !== void 0 && field.defaultValue !== null) {
           this.fieldValues[field.id] = field.defaultValue;
-        } else if (field.type === "enum" && !field.multiple && field.options && field.options.length > 0) {
+        } else if (field.type === "enum" && field.options && field.options.length > 0) {
           if (field.required) {
             this.fieldValues[field.id] = field.options[0].id;
           } else {
             this.fieldValues[field.id] = "";
           }
-        } else if (field.multiple) {
-          this.fieldValues[field.id] = [];
         } else {
           this.fieldValues[field.id] = "";
         }

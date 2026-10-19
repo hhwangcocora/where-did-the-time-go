@@ -91,6 +91,37 @@ describe('EntryModal Dynamic Schema', () => {
 
         expect(modal['fieldValues']['category']).toBe('Deep Work');
         expect(modal['fieldValues']['tags']).toEqual([]);
+        expect(modal['fieldValues']['with_who']).toEqual([]);
+    });
+
+    it('never pre-selects values for multi-select enum fields even if string defaultValue exists', () => {
+        const schemaWithDefault: TrackingSchemaConfig = {
+            ...testSchema,
+            fields: testSchema.fields.map(f =>
+                f.id === 'with_who' ? { ...f, defaultValue: 'Alice' } : f
+            ),
+        };
+        const customDataManager = {
+            ...dataManager,
+            getSchema: () => schemaWithDefault,
+        } as unknown as DataManager;
+
+        const modal = new EntryModal(
+            {} as App,
+            DEFAULT_SETTINGS,
+            customDataManager,
+            { mode: 'create', date: new Date(2025, 11, 1), startTime: '09:00', endTime: '10:00' },
+            () => {}
+        );
+
+        expect(modal['fieldValues']['with_who']).toEqual([]);
+
+        modal.onOpen();
+
+        const chips = Array.from(modal.contentEl.querySelectorAll('.multi-select-chip')) as HTMLElement[];
+        const aliceChip = chips.find(c => c.textContent?.includes('Alice'))!;
+        expect(aliceChip).toBeDefined();
+        expect(aliceChip.classList.contains('is-selected')).toBe(false);
     });
 
     it('renders input elements for all schema fields in onOpen', () => {

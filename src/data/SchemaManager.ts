@@ -267,7 +267,8 @@ export class SchemaManager {
                         label: optLabel,
                         color: isLocation ? FIXED_LOCATION_COLOR : getColorForValue(optLabel),
                     }));
-                    if (options.length > 0) {
+                    // Only assign a default value for required, single-select enum fields
+                    if (options.length > 0 && !multiple && required) {
                         defaultValue = options[0].label;
                     }
                 }

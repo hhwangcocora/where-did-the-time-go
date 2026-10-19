@@ -10,7 +10,7 @@ Changes are saved and applied automatically.
 | Location      | enum   | No       | Home Office, Office, Coffee Shop, Gym, Transit, Movement_svl, Movement_mtv, Movement_sc, whole_foods, costco, target, cvs, T&T               | No             | Badge         | 3                | place                      |
 | Tags          | string | No       |                                                                                                                                              | Yes            | Content       |                  | tags                       |
 | Notes         | string | No       |                                                                                                                                              | No             | Content       |                  | linked note                |
-| With Who      | enum   | No       | Bob, Alice, Joan, Cindy, Mandy W.                                                                                                            | Yes            | Hidden        |                  | with people, collaborators |
+| With Who      | enum   | No       | Bob, Alice, Joan, Cindy, Mandy W.                                                                                                            | Yes            | Content       |                  | with people, collaborators |
 
 > [!TIP]
 > - **Type**: `enum` or `string`.
