@@ -46,6 +46,20 @@ export class DataManager {
     }
 
     /**
+     * Get candidate activity names for a specific category
+     */
+    getActivityCandidates(category?: string): string[] {
+        return this.schemaManager ? this.schemaManager.getActivityCandidates(category) : [];
+    }
+
+    /**
+     * Get all unique candidate activity names across all categories
+     */
+    getAllActivityCandidates(): string[] {
+        return this.schemaManager ? this.schemaManager.getAllActivityCandidates() : [];
+    }
+
+    /**
      * Update settings reference (called when settings change)
      */
     updateSettings(settings: TimeTrackerSettings): void {

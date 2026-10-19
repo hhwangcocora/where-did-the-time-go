@@ -5,6 +5,7 @@ import { SchemaManager } from '../data/SchemaManager';
 import { TableParser } from '../data/TableParser';
 import { Logger } from '../utils/Logger';
 import { TimeInput } from '../components/TimeInput';
+import { ActivitySuggest } from '../components/ActivitySuggest';
 
 /**
  * Simple confirmation modal to replace browser confirm()
@@ -485,8 +486,66 @@ export class EntryModal extends Modal {
                             : [];
                     });
                 });
-            } else if (field.ui?.widget === 'textarea' || field.id === 'activity_name' || field.label.toLowerCase().includes('description')) {
-                // Multiline textarea or primary description
+            } else if (field.id === 'activity_name' || field.ui?.timelineRole === 'title') {
+                // Activity Name / Title: single-line text input with autocomplete suggestions
+                const maxLen = this.settings.descriptionMaxLength;
+                const currentVal = typeof this.fieldValues[field.id] === 'string' ? (this.fieldValues[field.id] as string) : '';
+
+                let counterEl: HTMLElement | null = null;
+                const updateCounter = (len: number) => {
+                    if (counterEl && maxLen > 0) {
+                        counterEl.setText(` (${len}/${maxLen})`);
+                        counterEl.toggleClass('is-over-limit', len > maxLen);
+                        counterEl.toggleClass('is-near-limit', len > maxLen * 0.8 && len <= maxLen);
+                    }
+                };
+
+                if (maxLen > 0) {
+                    counterEl = setting.nameEl.createSpan('description-counter');
+                    updateCounter(currentVal.length);
+                }
+
+                setting.addText((text) => {
+                    text.setValue(currentVal);
+                    text.setPlaceholder(field.ui?.placeholder || 'Activity name');
+                    text.inputEl.setAttribute('autocomplete', 'off');
+
+                    // Attach autocomplete suggestions based on selected category presets
+                    new ActivitySuggest(
+                        this.app,
+                        text.inputEl,
+                        () => this.getCandidateActivities(),
+                        (selectedVal) => {
+                            let cleaned = selectedVal;
+                            if (maxLen > 0 && cleaned.length > maxLen) {
+                                cleaned = cleaned.substring(0, maxLen);
+                                text.setValue(cleaned);
+                            }
+                            this.fieldValues[field.id] = cleaned;
+                            updateCounter(cleaned.length);
+                        },
+                        () => this.dataManager.getAllActivityCandidates()
+                    );
+
+                    // Show suggestions when focusing an empty input
+                    text.inputEl.addEventListener('focus', () => {
+                        if (!text.inputEl.value) {
+                            text.inputEl.dispatchEvent(new Event('input'));
+                        }
+                    });
+
+                    text.onChange((val) => {
+                        let cleaned = val;
+                        if (maxLen > 0 && cleaned.length > maxLen) {
+                            cleaned = cleaned.substring(0, maxLen);
+                            text.setValue(cleaned);
+                        }
+                        this.fieldValues[field.id] = cleaned;
+                        updateCounter(cleaned.length);
+                    });
+                });
+            } else if (field.ui?.widget === 'textarea' || (field.label.toLowerCase().includes('description') && field.id !== 'activity_name')) {
+                // Multiline textarea
                 const maxLen = this.settings.descriptionMaxLength;
                 const currentVal = typeof this.fieldValues[field.id] === 'string' ? (this.fieldValues[field.id] as string) : '';
 
@@ -535,6 +594,29 @@ export class EntryModal extends Modal {
                 });
             }
         }
+    }
+
+    /**
+     * Get currently selected category in modal
+     */
+    private getSelectedCategory(): string {
+        const schema = this.schema;
+        const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+            || schema.fields.find(f => f.id === 'category');
+        if (colorField) {
+            const val = this.fieldValues[colorField.id];
+            if (Array.isArray(val)) return val[0] || '';
+            if (typeof val === 'string') return val;
+        }
+        return '';
+    }
+
+    /**
+     * Get candidate activities for the currently selected category
+     */
+    private getCandidateActivities(): string[] {
+        const category = this.getSelectedCategory();
+        return this.dataManager.getActivityCandidates(category);
     }
 
     /**

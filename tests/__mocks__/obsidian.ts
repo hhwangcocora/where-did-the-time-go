@@ -68,6 +68,33 @@ export class FuzzySuggestModal<T> extends Modal {
     setPlaceholder(_p: string): void {}
 }
 
+export abstract class AbstractInputSuggest<T> {
+    app: any;
+    textInputEl: HTMLInputElement | HTMLDivElement;
+    protected limit = 100;
+
+    constructor(app: any, textInputEl: HTMLInputElement | HTMLDivElement) {
+        this.app = app;
+        this.textInputEl = textInputEl;
+    }
+
+    setValue(value: string): void {
+        if ('value' in this.textInputEl) {
+            this.textInputEl.value = value;
+        }
+    }
+
+    getValue(): string {
+        return ('value' in this.textInputEl) ? this.textInputEl.value : '';
+    }
+
+    protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+    abstract renderSuggestion(value: T, el: HTMLElement): void;
+    abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+    close(): void {}
+    open(): void {}
+}
+
 export class TextComponent {
     inputEl: HTMLInputElement;
     private changeListeners: ((v: string) => void)[] = [];

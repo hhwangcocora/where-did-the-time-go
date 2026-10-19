@@ -103,7 +103,22 @@ export interface TrackingSchemaConfig {
     fields: FieldDefinition[];
     /** Default report aggregation hierarchy (1 to 3 field IDs) */
     defaultReportGrouping: string[];
+    /** Predefined candidate activity names mapped by category */
+    activityPresets?: Record<string, string[]>;
 }
+
+/**
+ * Default candidate activity presets mapped by category
+ */
+export const DEFAULT_ACTIVITY_PRESETS: Record<string, string[]> = {
+    'Deep Work': ['Coding', 'Architecture', 'Code Review', 'Debugging', 'Writing'],
+    'Shallow Work': ['Email', 'Catch-up', 'Admin', 'Status Updates'],
+    'Fitness': ['Running', 'Weightlifting', 'Yoga', 'Cycling', 'Walking'],
+    'Learning': ['Reading', 'Course', 'Research'],
+    'Personal': ['Errand', 'Meal', 'Call'],
+    'Leisure': ['Gaming', 'Movies', 'Reading for Fun'],
+    'Work': ['Planning', 'Meeting', '1:1', 'Sync'],
+};
 
 /**
  * Free-text daily reflection or journal entry
@@ -144,12 +159,25 @@ Changes are saved and applied automatically.
 | Tags | string | No | | Yes | Content | | tags |
 | Notes | string | No | | No | Content | | linked note |
 
+## Predefined Activities
+
+| Category | Activities |
+| :--- | :--- |
+| Deep Work | Coding, Architecture, Code Review, Debugging, Writing |
+| Shallow Work | Email, Catch-up, Admin, Status Updates |
+| Fitness | Running, Weightlifting, Yoga, Cycling, Walking |
+| Learning | Reading, Course, Research |
+| Personal | Errand, Meal, Call |
+| Leisure | Gaming, Movies, Reading for Fun |
+| Work | Planning, Meeting, 1:1, Sync |
+
 > [!TIP]
 > - **Type**: \`enum\` or \`string\`.
 > - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
 > - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), \`Content\` (card body text), or \`Hidden\`.
 > - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
 > - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
+> - **Predefined Activities**: First column is Category, second column is candidate activity names. Category doesn't have to be in this table. You can still type other activities freely.
 `;
 
 /**
@@ -250,6 +278,7 @@ export const DEFAULT_SCHEMA_CONFIG: TrackingSchemaConfig = {
         },
     ],
     defaultReportGrouping: ['category', 'activity_name', 'location'],
+    activityPresets: DEFAULT_ACTIVITY_PRESETS,
 };
 
 /**

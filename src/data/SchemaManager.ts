@@ -332,10 +332,60 @@ export class SchemaManager {
             ? reportDimensions.map(r => r.id)
             : fields.slice(0, 3).map(f => f.id);
 
+        // Parse secondary table: Predefined activities per category
+        const activityPresets: Record<string, string[]> = {};
+        let presetHeaderLine = -1;
+        let categoryCol = -1;
+        let activityCol = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            // Header must start with |, contain category and activities/candidates/presets/names,
+            // and NOT be the main fields table (which has "field name" or "type" or "required")
+            if (line.startsWith('|') && !/field/i.test(line) && !/required/i.test(line) && /category/i.test(line) &&
+                (/activit/i.test(line) || /candidate/i.test(line) || /preset/i.test(line) || /name/i.test(line))) {
+                const headerCols = line.split('|').slice(1, -1).map(c => c.trim().toLowerCase());
+                const catIdx = headerCols.findIndex(h => h.includes('category'));
+                const actIdx = headerCols.findIndex(h => h.includes('activit') || h.includes('candidate') || h.includes('preset') || h.includes('name'));
+                if (catIdx !== -1 && actIdx !== -1 && catIdx !== actIdx) {
+                    presetHeaderLine = i;
+                    categoryCol = catIdx;
+                    activityCol = actIdx;
+                    break;
+                }
+            }
+        }
+
+        if (presetHeaderLine !== -1) {
+            for (let i = presetHeaderLine + 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line.startsWith('|')) {
+                    if (Object.keys(activityPresets).length > 0) break;
+                    continue;
+                }
+                if (line.includes('---')) continue;
+
+                const cells = line.split('|').slice(1, -1).map(c => c.trim());
+                const categoryName = (cells[categoryCol] || '').trim();
+                const rawActivities = (cells[activityCol] || '').trim();
+
+                if (categoryName && rawActivities) {
+                    const activities = rawActivities
+                        .split(',')
+                        .map(a => a.trim())
+                        .filter(Boolean);
+                    if (activities.length > 0) {
+                        activityPresets[categoryName] = activities;
+                    }
+                }
+            }
+        }
+
         return {
             version: 1,
             fields,
             defaultReportGrouping,
+            activityPresets: Object.keys(activityPresets).length > 0 ? activityPresets : undefined,
         };
     }
 
@@ -361,6 +411,19 @@ export class SchemaManager {
             rows.push(`| ${fieldName} | ${type} | ${required} | ${options} | ${multiple} | ${role} | ${reportDim} | ${aliases} |`);
         }
 
+        const presetRows: string[] = [];
+        if (config.activityPresets) {
+            for (const [cat, acts] of Object.entries(config.activityPresets)) {
+                if (cat && acts.length > 0) {
+                    presetRows.push(`| ${cat} | ${acts.join(', ')} |`);
+                }
+            }
+        }
+
+        const presetsSection = presetRows.length > 0
+            ? `\n## Predefined Activities\n\n| Category | Activities |\n| :--- | :--- |\n${presetRows.join('\n')}\n`
+            : '';
+
         return `# Activity Tracking Schema
 
 Edit the table below to customize your activity fields.
@@ -369,13 +432,14 @@ Changes are saved and applied automatically.
 | Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 ${rows.join('\n')}
-
+${presetsSection}
 > [!TIP]
 > - **Type**: \`enum\` or \`string\`.
 > - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
 > - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), \`Content\` (card body text), or \`Hidden\`.
 > - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
 > - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
+> - **Predefined Activities**: First column is Category, second column is candidate activity names. Category doesn't have to be in this table. You can still type other activities freely.
 `;
     }
 
@@ -465,5 +529,42 @@ ${rows.join('\n')}
      */
     getContentFields(): FieldDefinition[] {
         return this.schema.fields.filter(f => f.ui?.timelineRole === 'content');
+    }
+
+    /**
+     * Get candidate activity names for a specific category (or all candidates if category not provided)
+     */
+    getActivityCandidates(category?: string): string[] {
+        const presets = this.schema.activityPresets;
+        if (!presets) return [];
+
+        if (category && category.trim()) {
+            const normalized = category.trim().toLowerCase();
+            for (const [catName, activities] of Object.entries(presets)) {
+                if (catName.trim().toLowerCase() === normalized) {
+                    return [...activities];
+                }
+            }
+            // Category not found in presets table
+            return [];
+        }
+
+        return this.getAllActivityCandidates();
+    }
+
+    /**
+     * Get all unique candidate activity names across all categories
+     */
+    getAllActivityCandidates(): string[] {
+        const presets = this.schema.activityPresets;
+        if (!presets) return [];
+
+        const all = new Set<string>();
+        for (const activities of Object.values(presets)) {
+            for (const act of activities) {
+                if (act.trim()) all.add(act.trim());
+            }
+        }
+        return Array.from(all);
     }
 }

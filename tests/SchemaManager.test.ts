@@ -337,4 +337,81 @@ describe('SchemaManager', () => {
             expect(folder.path).toBe('TimeTracking');
         });
     });
+
+    describe('predefined activities', () => {
+        const schemaWithPresets = `# Activity Tracking Schema
+| Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Category | enum | Yes | Deep Work, Fitness, Sleep | No | Color | 1 | |
+| Activity Name | string | Yes | | No | Title | 2 | |
+
+## Predefined Activities
+
+| Category | Activities |
+| :--- | :--- |
+| Deep Work | Coding, System Architecture, Code Review |
+| Fitness | Running, Weightlifting |
+`;
+
+        beforeEach(async () => {
+            files.set('TimeTracking/Schema.md', schemaWithPresets);
+            await schemaManager.loadSchema();
+        });
+
+        test('parses activityPresets from secondary table', () => {
+            const schema = schemaManager.getSchema();
+            expect(schema.activityPresets).toBeDefined();
+            expect(schema.activityPresets?.['Deep Work']).toEqual(['Coding', 'System Architecture', 'Code Review']);
+            expect(schema.activityPresets?.['Fitness']).toEqual(['Running', 'Weightlifting']);
+            expect(schema.activityPresets?.['Sleep']).toBeUndefined();
+        });
+
+        test('getActivityCandidates returns candidates for specified category', () => {
+            expect(schemaManager.getActivityCandidates('Deep Work')).toEqual(['Coding', 'System Architecture', 'Code Review']);
+        });
+
+        test('getActivityCandidates is case-insensitive', () => {
+            expect(schemaManager.getActivityCandidates('deep work')).toEqual(['Coding', 'System Architecture', 'Code Review']);
+            expect(schemaManager.getActivityCandidates('FITNESS')).toEqual(['Running', 'Weightlifting']);
+        });
+
+        test('getActivityCandidates returns empty array for category not in table', () => {
+            expect(schemaManager.getActivityCandidates('Sleep')).toEqual([]);
+            expect(schemaManager.getActivityCandidates('NonExistent')).toEqual([]);
+        });
+
+        test('getActivityCandidates returns all candidates when no category specified', () => {
+            const candidates = schemaManager.getActivityCandidates();
+            expect(candidates).toContain('Coding');
+            expect(candidates).toContain('System Architecture');
+            expect(candidates).toContain('Code Review');
+            expect(candidates).toContain('Running');
+            expect(candidates).toContain('Weightlifting');
+            expect(candidates.length).toBe(5);
+        });
+
+        test('getAllActivityCandidates returns all unique candidates', () => {
+            const all = schemaManager.getAllActivityCandidates();
+            expect(all).toEqual(expect.arrayContaining(['Coding', 'System Architecture', 'Code Review', 'Running', 'Weightlifting']));
+            expect(all.length).toBe(5);
+        });
+
+        test('saveSchema serializes activityPresets into markdown table', async () => {
+            const current = schemaManager.getSchema();
+            const updatedConfig: TrackingSchemaConfig = {
+                ...current,
+                activityPresets: {
+                    'Deep Work': ['Coding', 'Debugging'],
+                    'Hobbies': ['Painting'],
+                },
+            };
+            await schemaManager.saveSchema(updatedConfig);
+            const content = files.get('TimeTracking/Schema.md')!;
+            expect(content).toContain('## Predefined Activities');
+            expect(content).toContain('| Category | Activities |');
+            expect(content).toContain('| Deep Work | Coding, Debugging |');
+            expect(content).toContain('| Hobbies | Painting |');
+        });
+    });
 });
+

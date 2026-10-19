@@ -131,7 +131,7 @@ __export(main_exports, {
   default: () => WhereDidTheTimeGoPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 
 // src/utils/colors.ts
 var COLOR_PALETTE = [
@@ -184,6 +184,15 @@ function getColorForValue(val) {
 }
 
 // src/types.ts
+var DEFAULT_ACTIVITY_PRESETS = {
+  "Deep Work": ["Coding", "Architecture", "Code Review", "Debugging", "Writing"],
+  "Shallow Work": ["Email", "Catch-up", "Admin", "Status Updates"],
+  "Fitness": ["Running", "Weightlifting", "Yoga", "Cycling", "Walking"],
+  "Learning": ["Reading", "Course", "Research"],
+  "Personal": ["Errand", "Meal", "Call"],
+  "Leisure": ["Gaming", "Movies", "Reading for Fun"],
+  "Work": ["Planning", "Meeting", "1:1", "Sync"]
+};
 var DEFAULT_SCHEMA_CONFIG = {
   version: 1,
   fields: [
@@ -278,7 +287,8 @@ var DEFAULT_SCHEMA_CONFIG = {
       }
     }
   ],
-  defaultReportGrouping: ["category", "activity_name", "location"]
+  defaultReportGrouping: ["category", "activity_name", "location"],
+  activityPresets: DEFAULT_ACTIVITY_PRESETS
 };
 var DEFAULT_SETTINGS = {
   timeTrackingFolder: "TimeTracking",
@@ -11327,6 +11337,18 @@ var _DataManager = class {
     return this.schemaManager ? this.schemaManager.getSchema() : DEFAULT_SCHEMA_CONFIG;
   }
   /**
+   * Get candidate activity names for a specific category
+   */
+  getActivityCandidates(category) {
+    return this.schemaManager ? this.schemaManager.getActivityCandidates(category) : [];
+  }
+  /**
+   * Get all unique candidate activity names across all categories
+   */
+  getAllActivityCandidates() {
+    return this.schemaManager ? this.schemaManager.getAllActivityCandidates() : [];
+  }
+  /**
    * Update settings reference (called when settings change)
    */
   updateSettings(settings) {
@@ -12063,10 +12085,50 @@ var SchemaManager = class {
     }
     reportDimensions.sort((a, b) => a.order - b.order);
     const defaultReportGrouping = reportDimensions.length > 0 ? reportDimensions.map((r) => r.id) : fields.slice(0, 3).map((f) => f.id);
+    const activityPresets = {};
+    let presetHeaderLine = -1;
+    let categoryCol = -1;
+    let activityCol = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("|") && !/field/i.test(line) && !/required/i.test(line) && /category/i.test(line) && (/activit/i.test(line) || /candidate/i.test(line) || /preset/i.test(line) || /name/i.test(line))) {
+        const headerCols = line.split("|").slice(1, -1).map((c) => c.trim().toLowerCase());
+        const catIdx = headerCols.findIndex((h) => h.includes("category"));
+        const actIdx = headerCols.findIndex((h) => h.includes("activit") || h.includes("candidate") || h.includes("preset") || h.includes("name"));
+        if (catIdx !== -1 && actIdx !== -1 && catIdx !== actIdx) {
+          presetHeaderLine = i;
+          categoryCol = catIdx;
+          activityCol = actIdx;
+          break;
+        }
+      }
+    }
+    if (presetHeaderLine !== -1) {
+      for (let i = presetHeaderLine + 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line.startsWith("|")) {
+          if (Object.keys(activityPresets).length > 0)
+            break;
+          continue;
+        }
+        if (line.includes("---"))
+          continue;
+        const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+        const categoryName = (cells[categoryCol] || "").trim();
+        const rawActivities = (cells[activityCol] || "").trim();
+        if (categoryName && rawActivities) {
+          const activities = rawActivities.split(",").map((a) => a.trim()).filter(Boolean);
+          if (activities.length > 0) {
+            activityPresets[categoryName] = activities;
+          }
+        }
+      }
+    }
     return {
       version: 1,
       fields,
-      defaultReportGrouping
+      defaultReportGrouping,
+      activityPresets: Object.keys(activityPresets).length > 0 ? activityPresets : void 0
     };
   }
   /**
@@ -12087,6 +12149,21 @@ var SchemaManager = class {
       const aliases = f.aliases ? f.aliases.join(", ") : "";
       rows.push(`| ${fieldName} | ${type} | ${required} | ${options} | ${multiple} | ${role} | ${reportDim} | ${aliases} |`);
     }
+    const presetRows = [];
+    if (config.activityPresets) {
+      for (const [cat, acts] of Object.entries(config.activityPresets)) {
+        if (cat && acts.length > 0) {
+          presetRows.push(`| ${cat} | ${acts.join(", ")} |`);
+        }
+      }
+    }
+    const presetsSection = presetRows.length > 0 ? `
+## Predefined Activities
+
+| Category | Activities |
+| :--- | :--- |
+${presetRows.join("\n")}
+` : "";
     return `# Activity Tracking Schema
 
 Edit the table below to customize your activity fields.
@@ -12095,13 +12172,14 @@ Changes are saved and applied automatically.
 | Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 ${rows.join("\n")}
-
+${presetsSection}
 > [!TIP]
 > - **Type**: \`enum\` or \`string\`.
 > - **Options**: Comma-separated values for \`enum\` fields. Colors are assigned automatically and stay consistent.
 > - **Timeline Role**: \`Color\` (drives card background/border), \`Title\` (card heading), \`Badge\` (pill badge), \`Content\` (card body text), or \`Hidden\`.
 > - **Report Dimension**: \`1\`, \`2\`, or \`3\` defines the aggregation hierarchy in monthly reports.
 > - **Aliases**: Comma-separated historical column names so older monthly records parse without data loss.
+> - **Predefined Activities**: First column is Category, second column is candidate activity names. Category doesn't have to be in this table. You can still type other activities freely.
 `;
   }
   /**
@@ -12192,13 +12270,47 @@ ${rows.join("\n")}
       return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "content";
     });
   }
+  /**
+   * Get candidate activity names for a specific category (or all candidates if category not provided)
+   */
+  getActivityCandidates(category) {
+    const presets = this.schema.activityPresets;
+    if (!presets)
+      return [];
+    if (category && category.trim()) {
+      const normalized = category.trim().toLowerCase();
+      for (const [catName, activities] of Object.entries(presets)) {
+        if (catName.trim().toLowerCase() === normalized) {
+          return [...activities];
+        }
+      }
+      return [];
+    }
+    return this.getAllActivityCandidates();
+  }
+  /**
+   * Get all unique candidate activity names across all categories
+   */
+  getAllActivityCandidates() {
+    const presets = this.schema.activityPresets;
+    if (!presets)
+      return [];
+    const all2 = /* @__PURE__ */ new Set();
+    for (const activities of Object.values(presets)) {
+      for (const act of activities) {
+        if (act.trim())
+          all2.add(act.trim());
+      }
+    }
+    return Array.from(all2);
+  }
 };
 
 // src/views/TimelineView.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/modals/EntryModal.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/components/TimePickerPopup.ts
 var TimePickerPopup = class {
@@ -12561,8 +12673,46 @@ var _TimeInput = class {
 var TimeInput = _TimeInput;
 TimeInput.nextId = 0;
 
+// src/components/ActivitySuggest.ts
+var import_obsidian4 = require("obsidian");
+var ActivitySuggest = class extends import_obsidian4.AbstractInputSuggest {
+  constructor(app, inputEl, getCandidates, onSelectCallback, getAllCandidates) {
+    super(app, inputEl);
+    this.getCandidates = getCandidates;
+    this.onSelectCallback = onSelectCallback;
+    this.getAllCandidates = getAllCandidates;
+  }
+  getSuggestions(query) {
+    const candidates = this.getCandidates();
+    const lower = (query || "").toLowerCase().trim();
+    if (!lower) {
+      return candidates;
+    }
+    const matches = candidates.filter((item) => item.toLowerCase().includes(lower));
+    if (matches.length > 0) {
+      return matches;
+    }
+    if (this.getAllCandidates) {
+      const allCandidates = this.getAllCandidates();
+      const allMatches = allCandidates.filter((item) => item.toLowerCase().includes(lower));
+      if (allMatches.length > 0) {
+        return allMatches;
+      }
+    }
+    return [];
+  }
+  renderSuggestion(value, el) {
+    el.setText(value);
+  }
+  selectSuggestion(value, _evt) {
+    this.setValue(value);
+    this.onSelectCallback(value);
+    this.close();
+  }
+};
+
 // src/modals/EntryModal.ts
-var ConfirmModal = class extends import_obsidian4.Modal {
+var ConfirmModal = class extends import_obsidian5.Modal {
   constructor(app, message, onConfirm) {
     super(app);
     this.message = message;
@@ -12585,7 +12735,7 @@ var ConfirmModal = class extends import_obsidian4.Modal {
     contentEl.empty();
   }
 };
-var EntryModal = class extends import_obsidian4.Modal {
+var EntryModal = class extends import_obsidian5.Modal {
   constructor(app, settings, dataManager, data, onSave, schemaManager) {
     var _a, _b, _c;
     super(app);
@@ -12722,7 +12872,7 @@ var EntryModal = class extends import_obsidian4.Modal {
     const title = this.data.mode === "edit" ? "Edit Time Entry" : "New Time Entry";
     contentEl.createEl("h2", { text: title });
     const startRow = contentEl.createDiv("time-row");
-    const startSetting = new import_obsidian4.Setting(startRow).setName("Start").addText((text5) => {
+    const startSetting = new import_obsidian5.Setting(startRow).setName("Start").addText((text5) => {
       this.startDateInput = text5;
       text5.setValue(this.startDateValue);
       text5.inputEl.type = "date";
@@ -12754,7 +12904,7 @@ var EntryModal = class extends import_obsidian4.Modal {
       e.preventDefault();
       this.snapStartToPrevious();
     });
-    new import_obsidian4.Setting(contentEl).setName("Duration").addText((text5) => {
+    new import_obsidian5.Setting(contentEl).setName("Duration").addText((text5) => {
       this.durationInput = text5;
       text5.setValue(this.durationValue);
       text5.setPlaceholder("1h 30m");
@@ -12766,7 +12916,7 @@ var EntryModal = class extends import_obsidian4.Modal {
       });
     });
     const endRow = contentEl.createDiv("time-row");
-    const endSetting = new import_obsidian4.Setting(endRow).setName("End").addText((text5) => {
+    const endSetting = new import_obsidian5.Setting(endRow).setName("End").addText((text5) => {
       this.endDateInput = text5;
       text5.setValue(this.endDateValue);
       text5.inputEl.type = "date";
@@ -12841,8 +12991,8 @@ var EntryModal = class extends import_obsidian4.Modal {
    * Render a dynamic form input according to field definition
    */
   renderSchemaField(container, field) {
-    var _a, _b;
-    const setting = new import_obsidian4.Setting(container);
+    var _a, _b, _c;
+    const setting = new import_obsidian5.Setting(container);
     const labelText = field.required ? `${field.label} *` : field.label;
     setting.setName(labelText);
     if (field.type === "enum" || field.options) {
@@ -12913,7 +13063,57 @@ var EntryModal = class extends import_obsidian4.Modal {
             this.fieldValues[field.id] = val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
           });
         });
-      } else if (((_b = field.ui) == null ? void 0 : _b.widget) === "textarea" || field.id === "activity_name" || field.label.toLowerCase().includes("description")) {
+      } else if (field.id === "activity_name" || ((_b = field.ui) == null ? void 0 : _b.timelineRole) === "title") {
+        const maxLen = this.settings.descriptionMaxLength;
+        const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
+        let counterEl = null;
+        const updateCounter = (len) => {
+          if (counterEl && maxLen > 0) {
+            counterEl.setText(` (${len}/${maxLen})`);
+            counterEl.toggleClass("is-over-limit", len > maxLen);
+            counterEl.toggleClass("is-near-limit", len > maxLen * 0.8 && len <= maxLen);
+          }
+        };
+        if (maxLen > 0) {
+          counterEl = setting.nameEl.createSpan("description-counter");
+          updateCounter(currentVal.length);
+        }
+        setting.addText((text5) => {
+          var _a2;
+          text5.setValue(currentVal);
+          text5.setPlaceholder(((_a2 = field.ui) == null ? void 0 : _a2.placeholder) || "Activity name");
+          text5.inputEl.setAttribute("autocomplete", "off");
+          new ActivitySuggest(
+            this.app,
+            text5.inputEl,
+            () => this.getCandidateActivities(),
+            (selectedVal) => {
+              let cleaned = selectedVal;
+              if (maxLen > 0 && cleaned.length > maxLen) {
+                cleaned = cleaned.substring(0, maxLen);
+                text5.setValue(cleaned);
+              }
+              this.fieldValues[field.id] = cleaned;
+              updateCounter(cleaned.length);
+            },
+            () => this.dataManager.getAllActivityCandidates()
+          );
+          text5.inputEl.addEventListener("focus", () => {
+            if (!text5.inputEl.value) {
+              text5.inputEl.dispatchEvent(new Event("input"));
+            }
+          });
+          text5.onChange((val) => {
+            let cleaned = val;
+            if (maxLen > 0 && cleaned.length > maxLen) {
+              cleaned = cleaned.substring(0, maxLen);
+              text5.setValue(cleaned);
+            }
+            this.fieldValues[field.id] = cleaned;
+            updateCounter(cleaned.length);
+          });
+        });
+      } else if (((_c = field.ui) == null ? void 0 : _c.widget) === "textarea" || field.label.toLowerCase().includes("description") && field.id !== "activity_name") {
         const maxLen = this.settings.descriptionMaxLength;
         const currentVal = typeof this.fieldValues[field.id] === "string" ? this.fieldValues[field.id] : "";
         if (maxLen > 0) {
@@ -12963,6 +13163,31 @@ var EntryModal = class extends import_obsidian4.Modal {
         });
       }
     }
+  }
+  /**
+   * Get currently selected category in modal
+   */
+  getSelectedCategory() {
+    const schema = this.schema;
+    const colorField = schema.fields.find((f) => {
+      var _a;
+      return ((_a = f.ui) == null ? void 0 : _a.timelineRole) === "color";
+    }) || schema.fields.find((f) => f.id === "category");
+    if (colorField) {
+      const val = this.fieldValues[colorField.id];
+      if (Array.isArray(val))
+        return val[0] || "";
+      if (typeof val === "string")
+        return val;
+    }
+    return "";
+  }
+  /**
+   * Get candidate activities for the currently selected category
+   */
+  getCandidateActivities() {
+    const category = this.getSelectedCategory();
+    return this.dataManager.getActivityCandidates(category);
   }
   /**
    * Render an interactive multi-select chip toggle group for enum fields with multiple: true
@@ -13135,7 +13360,7 @@ var EntryModal = class extends import_obsidian4.Modal {
     const startDateTime = new Date(`${this.startDateValue}T${this.startTimeValue}`);
     const endDateTime = new Date(`${this.endDateValue}T${this.endTimeValue}`);
     if (!Number.isFinite(startDateTime.getTime()) || !Number.isFinite(endDateTime.getTime()) || endDateTime <= startDateTime) {
-      new import_obsidian4.Notice("End time must be after start time");
+      new import_obsidian5.Notice("End time must be after start time");
       return;
     }
     for (const field of this.schema.fields) {
@@ -13151,7 +13376,7 @@ var EntryModal = class extends import_obsidian4.Modal {
             this.fieldValues[field.id] = this.activityValue || field.defaultValue;
             continue;
           }
-          new import_obsidian4.Notice(`Please enter ${field.label}`);
+          new import_obsidian5.Notice(`Please enter ${field.label}`);
           return;
         }
       }
@@ -13374,16 +13599,16 @@ var EntryModal = class extends import_obsidian4.Modal {
     createBtn.addEventListener("click", () => {
       const noteName = nameInput.value.trim().replace(/^-+|-+$/g, "");
       if (!noteName) {
-        new import_obsidian4.Notice("Please enter a note name");
+        new import_obsidian5.Notice("Please enter a note name");
         return;
       }
       void this.createLinkedNote(noteName).then((notePath) => {
         linkedNoteInput.setValue(notePath);
         this.linkedNoteValue = notePath;
         createNoteRow.remove();
-        new import_obsidian4.Notice("Note created!");
+        new import_obsidian5.Notice("Note created!");
       }).catch((err) => {
-        new import_obsidian4.Notice(`Failed to create note: ${err.message}`);
+        new import_obsidian5.Notice(`Failed to create note: ${err.message}`);
       });
     });
     cancelBtn.addEventListener("click", () => {
@@ -13651,7 +13876,7 @@ ${validTags.map((t) => `  - ${t}`).join("\n")}
     void this.findAdjacentEntries();
   }
 };
-var NoteSuggestModal = class extends import_obsidian4.FuzzySuggestModal {
+var NoteSuggestModal = class extends import_obsidian5.FuzzySuggestModal {
   constructor(app, onSelect) {
     super(app);
     this.onSelect = onSelect;
@@ -13669,8 +13894,8 @@ var NoteSuggestModal = class extends import_obsidian4.FuzzySuggestModal {
 };
 
 // src/modals/DiaryModal.ts
-var import_obsidian5 = require("obsidian");
-var DiaryModal = class extends import_obsidian5.Modal {
+var import_obsidian6 = require("obsidian");
+var DiaryModal = class extends import_obsidian6.Modal {
   constructor(app, dataManager, dateStr, onSave) {
     super(app);
     this.contentValue = "";
@@ -13698,7 +13923,7 @@ var DiaryModal = class extends import_obsidian5.Modal {
       cls: "setting-item-description"
     });
     hintEl.style.marginBottom = "12px";
-    const setting = new import_obsidian5.Setting(contentEl);
+    const setting = new import_obsidian6.Setting(contentEl);
     setting.settingEl.style.border = "none";
     setting.settingEl.style.padding = "0";
     setting.infoEl.remove();
@@ -13812,7 +14037,7 @@ function formatTimeRange(start, end, use24HourFormat) {
 }
 
 // src/views/TimelineView.ts
-var TimelineView = class extends import_obsidian6.ItemView {
+var TimelineView = class extends import_obsidian7.ItemView {
   constructor(leaf, settings, dataManager) {
     super(leaf);
     // Scroll state
@@ -14001,19 +14226,19 @@ var TimelineView = class extends import_obsidian6.ItemView {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Previous day" }
     });
-    (0, import_obsidian6.setIcon)(prevBtn, "chevron-left");
+    (0, import_obsidian7.setIcon)(prevBtn, "chevron-left");
     prevBtn.addEventListener("click", () => this.navigateDays(-1));
     const nextBtn = controls.createEl("button", {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Next day" }
     });
-    (0, import_obsidian6.setIcon)(nextBtn, "chevron-right");
+    (0, import_obsidian7.setIcon)(nextBtn, "chevron-right");
     nextBtn.addEventListener("click", () => this.navigateDays(1));
     const jumpBtn = controls.createEl("button", {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Jump to date" }
     });
-    (0, import_obsidian6.setIcon)(jumpBtn, "calendar");
+    (0, import_obsidian7.setIcon)(jumpBtn, "calendar");
     const hiddenDatePicker = controls.createEl("input", {
       type: "date",
       cls: "timeline-date-picker-hidden"
@@ -14039,7 +14264,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
       cls: "timeline-btn timeline-nav-btn",
       attr: { "aria-label": "Open daily diary" }
     });
-    (0, import_obsidian6.setIcon)(this.headerDiaryBtn, "book-open");
+    (0, import_obsidian7.setIcon)(this.headerDiaryBtn, "book-open");
     this.headerDiaryBtn.addEventListener("click", () => {
       const visibleDate = this.getVisibleDate();
       const dateStr = TableParser.getDateString(visibleDate);
@@ -14051,7 +14276,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
       cls: "timeline-btn timeline-btn-add",
       attr: { "aria-label": "Add new entry" }
     });
-    (0, import_obsidian6.setIcon)(addBtn, "plus");
+    (0, import_obsidian7.setIcon)(addBtn, "plus");
     addBtn.addEventListener("click", () => {
       const now = new Date();
       const startTime = `${now.getHours().toString().padStart(2, "0")}:${Math.floor(now.getMinutes() / 15) * 15}`.padEnd(5, "0").substring(0, 5);
@@ -14238,7 +14463,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
       cls: `day-header-diary-btn${hasDiary ? " has-diary" : ""}`,
       attr: { "aria-label": hasDiary ? `Edit daily diary (${dateStr})` : `Write daily diary (${dateStr})` }
     });
-    (0, import_obsidian6.setIcon)(diaryBtn, "book-open");
+    (0, import_obsidian7.setIcon)(diaryBtn, "book-open");
     diaryBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       new DiaryModal(this.app, this.dataManager, dateStr, () => {
@@ -14326,7 +14551,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
     const icons = header.createDiv("entry-header-icons");
     if (entry.linkedNote) {
       const noteIcon = icons.createSpan("entry-icon");
-      (0, import_obsidian6.setIcon)(noteIcon, "paperclip");
+      (0, import_obsidian7.setIcon)(noteIcon, "paperclip");
       noteIcon.setAttribute("title", `Open: ${entry.linkedNote}`);
       noteIcon.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -14334,14 +14559,14 @@ var TimelineView = class extends import_obsidian6.ItemView {
       });
     }
     const editIcon = icons.createSpan("entry-icon");
-    (0, import_obsidian6.setIcon)(editIcon, "pencil");
+    (0, import_obsidian7.setIcon)(editIcon, "pencil");
     editIcon.setAttribute("title", "Edit entry");
     editIcon.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openEditModal(entry);
     });
     const deleteIcon = icons.createSpan("entry-icon entry-icon-delete");
-    (0, import_obsidian6.setIcon)(deleteIcon, "trash-2");
+    (0, import_obsidian7.setIcon)(deleteIcon, "trash-2");
     deleteIcon.setAttribute("title", "Delete entry");
     deleteIcon.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -14524,7 +14749,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
       await this.refresh();
     } catch (err) {
       Logger.error("Failed to update entry after drag:", err);
-      new import_obsidian6.Notice("Failed to move entry. It may overlap with another entry.");
+      new import_obsidian7.Notice("Failed to move entry. It may overlap with another entry.");
       card.style.top = `${this.entryDragOriginalTop}px`;
       card.style.height = `${this.entryDragOriginalHeight}px`;
     }
@@ -15182,7 +15407,7 @@ var TimelineView = class extends import_obsidian6.ItemView {
     modal.open();
   }
 };
-var ConfirmDeleteModal = class extends import_obsidian6.Modal {
+var ConfirmDeleteModal = class extends import_obsidian7.Modal {
   constructor(app, entry, timeRange, onConfirm) {
     super(app);
     this.timeRange = timeRange;
@@ -15230,7 +15455,7 @@ var ConfirmDeleteModal = class extends import_obsidian6.Modal {
 };
 
 // src/views/ReportsView.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/data/ReportAggregator.ts
 function formatDateKey(date) {
@@ -15497,7 +15722,7 @@ var ReportAggregator = class {
 
 // src/views/ReportsView.ts
 var MAX_REPORT_DAYS = 90;
-var ReportsView = class extends import_obsidian7.ItemView {
+var ReportsView = class extends import_obsidian8.ItemView {
   constructor(leaf, settings, dataManager) {
     super(leaf);
     // Current report state
@@ -15729,7 +15954,7 @@ var ReportsView = class extends import_obsidian7.ItemView {
     const { start, end } = this.getDateRange(this.selectedPreset);
     const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1e3 * 60 * 60 * 24));
     if (daysDiff > MAX_REPORT_DAYS) {
-      new import_obsidian7.Notice(`Report range limited to ${MAX_REPORT_DAYS} days for performance. Please select a shorter range.`);
+      new import_obsidian8.Notice(`Report range limited to ${MAX_REPORT_DAYS} days for performance. Please select a shorter range.`);
       return;
     }
     Logger.log("ReportsView: Loading report for", start.toDateString(), "to", end.toDateString());
@@ -15891,7 +16116,7 @@ var ReportsView = class extends import_obsidian7.ItemView {
     const { start, end } = this.getDateRange(this.selectedPreset);
     const entries = await this.dataManager.loadDateRange(start, end);
     if (entries.length === 0) {
-      new import_obsidian7.Notice("No entries to export");
+      new import_obsidian8.Notice("No entries to export");
       return;
     }
     const csv = this.generateCSV(entries);
@@ -15953,7 +16178,7 @@ var ReportsView = class extends import_obsidian7.ItemView {
     const { start, end } = this.getDateRange(this.selectedPreset);
     const entries = await this.dataManager.loadDateRange(start, end);
     if (entries.length === 0) {
-      new import_obsidian7.Notice("No entries to export");
+      new import_obsidian8.Notice("No entries to export");
       return;
     }
     const json = this.generateJSON(entries, start, end);
@@ -16026,7 +16251,7 @@ var ReportsView = class extends import_obsidian7.ItemView {
 };
 
 // main.ts
-var WhereDidTheTimeGoPlugin = class extends import_obsidian8.Plugin {
+var WhereDidTheTimeGoPlugin = class extends import_obsidian9.Plugin {
   async onload() {
     Logger.debug("Loading Where Did The Time Go plugin");
     await this.loadSettings();
@@ -16081,8 +16306,8 @@ var WhereDidTheTimeGoPlugin = class extends import_obsidian8.Plugin {
       }
     });
     this.addSettingTab(new TimeTrackerSettingTab(this.app, this));
-    const debouncedRefresh = (0, import_obsidian8.debounce)(() => this.refreshTimelineViews(), 500, true);
-    const debouncedSchemaReload = (0, import_obsidian8.debounce)(async () => {
+    const debouncedRefresh = (0, import_obsidian9.debounce)(() => this.refreshTimelineViews(), 500, true);
+    const debouncedSchemaReload = (0, import_obsidian9.debounce)(async () => {
       Logger.debug("Schema.md modified, reloading schema");
       await this.schemaManager.loadSchema();
       debouncedRefresh();
