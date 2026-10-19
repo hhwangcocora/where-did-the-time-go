@@ -52,6 +52,9 @@ export class TimelineView extends ItemView {
     private entryDragOriginalHeight: number = 0;
     private entryDragTooltipEl: HTMLElement | null = null;
 
+    // Track user-expanded collapsible cards (e.g., Sleep entries)
+    private expandedEntryKeys = new Set<string>();
+
     constructor(
         leaf: WorkspaceLeaf,
         settings: TimeTrackerSettings,
@@ -610,15 +613,29 @@ export class TimelineView extends ItemView {
         const top = dayTopOffset + (cardStartMinutes / 60) * this.settings.hourHeight;
         const height = Math.max((totalDurationMinutes / 60) * this.settings.hourHeight, 50);
 
+        const isSleep = this.isSleepEntry(entry);
+        const entryKey = `${entry.date}_${entry.lineNumber}_${entry.start}`;
+        const isCollapsedSleep = isSleep && !this.expandedEntryKeys.has(entryKey);
+
         const card = this.entriesContainer.createDiv('timeline-entry-card');
         card.style.top = `${top}px`;
-        card.style.height = `${height}px`;
+        card.style.height = isCollapsedSleep ? '38px' : `${height}px`;
         card.dataset.entryDate = entry.date;
         card.dataset.entryLine = String(entry.lineNumber);
 
         // Dynamic card color
         const cardColor = this.getEntryColor(entry);
         card.style.setProperty('--card-color', cardColor);
+
+        // Sleep specific classes
+        if (isSleep) {
+            card.addClass('entry-sleep');
+            if (isCollapsedSleep) {
+                card.addClass('entry-sleep-collapsed');
+            } else {
+                card.addClass('entry-sleep-expanded');
+            }
+        }
 
         // Duration-based layout classes
         const is15m = totalDurationMinutes <= 15;
@@ -639,6 +656,12 @@ export class TimelineView extends ItemView {
         // === HEADER SECTION ===
         const header = card.createDiv('entry-card-header');
 
+        // Sleep tag for sleep entries
+        if (isSleep) {
+            const sleepTag = header.createSpan('entry-sleep-tag');
+            sleepTag.setText('🌙 ' + (this.getEntryTitle(entry) || 'Sleep'));
+        }
+
         // Time text + duration badge
         const timeText = header.createSpan('entry-time-text');
         timeText.setText(timeRange);
@@ -646,7 +669,7 @@ export class TimelineView extends ItemView {
         durationBadge.setText(this.formatDuration(entry.durationMinutes));
 
         // 15m layout: Tiny tags inline in header (Location only)
-        if (is15m) {
+        if (is15m && !isSleep) {
             const tinyTags = header.createDiv('entry-tiny-tags');
             const badges = this.getEntryBadges(entry);
 
@@ -666,6 +689,31 @@ export class TimelineView extends ItemView {
 
         // Icons (right side of header)
         const icons = header.createDiv('entry-header-icons');
+
+        // Collapse/expand toggle icon for sleep entries
+        if (isSleep) {
+            const toggleIcon = icons.createSpan('entry-icon entry-icon-toggle');
+            setIcon(toggleIcon, isCollapsedSleep ? 'chevron-down' : 'chevron-up');
+            toggleIcon.setAttribute('title', isCollapsedSleep ? 'Expand sleep entry' : 'Collapse sleep entry');
+            toggleIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.expandedEntryKeys.has(entryKey)) {
+                    this.expandedEntryKeys.delete(entryKey);
+                    card.removeClass('entry-sleep-expanded');
+                    card.addClass('entry-sleep-collapsed');
+                    card.style.height = '38px';
+                    setIcon(toggleIcon, 'chevron-down');
+                    toggleIcon.setAttribute('title', 'Expand sleep entry');
+                } else {
+                    this.expandedEntryKeys.add(entryKey);
+                    card.removeClass('entry-sleep-collapsed');
+                    card.addClass('entry-sleep-expanded');
+                    card.style.height = `${height}px`;
+                    setIcon(toggleIcon, 'chevron-up');
+                    toggleIcon.setAttribute('title', 'Collapse sleep entry');
+                }
+            });
+        }
 
         // Linked note icon (paperclip)
         if (entry.linkedNote) {
@@ -804,7 +852,10 @@ export class TimelineView extends ItemView {
         this.entryDragCard = card;
         this.entryDragStartY = clientY;
         this.entryDragOriginalTop = parseFloat(card.style.top);
-        this.entryDragOriginalHeight = parseFloat(card.style.height);
+        const isCollapsedSleep = card.classList.contains('entry-sleep-collapsed');
+        this.entryDragOriginalHeight = isCollapsedSleep
+            ? Math.max((entry.durationMinutes / 60) * this.settings.hourHeight, 50)
+            : parseFloat(card.style.height);
 
         card.addClass('is-dragging');
 
@@ -908,8 +959,11 @@ export class TimelineView extends ItemView {
         const newHeight = parseFloat(card.style.height);
 
         // Convert pixel positions to times
+        const isCollapsedSleep = card.classList.contains('entry-sleep-collapsed');
         const newStartMinutes = (newTop / this.settings.hourHeight) * 60;
-        const newDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
+        const newDurationMinutes = isCollapsedSleep
+            ? entry.durationMinutes
+            : (newHeight / this.settings.hourHeight) * 60;
 
         // Calculate which day the entry is now on
         const dayIndex = Math.floor(newTop / this.dayHeight);
@@ -986,8 +1040,11 @@ export class TimelineView extends ItemView {
         const newHeight = parseFloat(this.entryDragCard.style.height);
 
         // Convert pixel positions to times
+        const isCollapsedSleep = this.entryDragCard.classList.contains('entry-sleep-collapsed');
         const newStartMinutes = (newTop / this.settings.hourHeight) * 60;
-        const newDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
+        const newDurationMinutes = isCollapsedSleep && this.entryDragEntry
+            ? this.entryDragEntry.durationMinutes
+            : (newHeight / this.settings.hourHeight) * 60;
 
         // Calculate which day and time
         const dayIndex = Math.floor(newTop / this.dayHeight);
@@ -1098,6 +1155,34 @@ export class TimelineView extends ItemView {
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
         return `${year}-${month}-${day}`;
+    }
+
+    /**
+     * Check if an entry represents a Sleep activity
+     */
+    private isSleepEntry(entry: TimeEntry): boolean {
+        const schema = this.dataManager.getSchema();
+        const colorField = schema.fields.find(f => f.ui?.timelineRole === 'color')
+            || schema.fields.find(f => f.id === 'category');
+
+        let categoryVal = '';
+        if (colorField && entry.fields?.[colorField.id]) {
+            const v = entry.fields[colorField.id];
+            categoryVal = Array.isArray(v) ? v[0] || '' : v;
+        } else if (entry.activity) {
+            categoryVal = entry.activity;
+        }
+
+        if (categoryVal && categoryVal.trim().toLowerCase() === 'sleep') {
+            return true;
+        }
+
+        const title = this.getEntryTitle(entry);
+        if (title && title.trim().toLowerCase() === 'sleep') {
+            return true;
+        }
+
+        return false;
     }
 
     /**

@@ -138,7 +138,7 @@ Changes are saved and applied automatically.
 
 | Field Name | Type | Required | Options | Allow Multiple | Timeline Role | Report Dimension | Aliases |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Category | enum | Yes | Deep Work, Shallow Work, Fitness, Learning, Personal, Leisure, Work | No | Color | 1 | activity |
+| Category | enum | Yes | Deep Work, Shallow Work, Fitness, Learning, Personal, Leisure, Work, Sleep | No | Color | 1 | activity |
 | Activity Name | string | Yes | | No | Title | 2 | task, description |
 | Location | enum | No | Home Office, Office, Coffee Shop, Gym, Transit, Movement | No | Badge | 3 | place |
 | Tags | string | No | | Yes | Content | | tags |
@@ -173,6 +173,7 @@ export const DEFAULT_SCHEMA_CONFIG: TrackingSchemaConfig = {
                 'Personal',
                 'Leisure',
                 'Work',
+                'Sleep',
             ].map(label => ({
                 id: label.toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, ''),
                 label,

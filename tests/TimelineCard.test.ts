@@ -250,4 +250,59 @@ describe('TimelineView Dynamic Card Helpers', () => {
             expect(tooltip).not.toContain('Client:');
         });
     });
+
+    describe('Sleep collapsible card behavior', () => {
+        it('identifies sleep entries by category or title', () => {
+            const sleepEntry1 = createSampleEntry({
+                fields: { category: 'Sleep', activity_name: 'Night sleep' },
+            });
+            const sleepEntry2 = createSampleEntry({
+                fields: { category: 'Personal', activity_name: 'Sleep' },
+            });
+            const regularEntry = createSampleEntry({
+                fields: { category: 'Deep Work', activity_name: 'Coding' },
+            });
+
+            expect((view as any).isSleepEntry(sleepEntry1)).toBe(true);
+            expect((view as any).isSleepEntry(sleepEntry2)).toBe(true);
+            expect((view as any).isSleepEntry(regularEntry)).toBe(false);
+        });
+
+        it('renders sleep entry as collapsed card by default with toggle button and moon icon', () => {
+            const sleepEntry = createSampleEntry({
+                start: '23:00',
+                end: '07:00',
+                durationMinutes: 480,
+                fields: { category: 'Sleep', activity_name: 'Sleep' },
+            });
+
+            const container = document.createElement('div');
+            (view as any).entriesContainer = container;
+            (view as any).renderEntryCard(sleepEntry, 0);
+
+            const card = container.querySelector('.timeline-entry-card') as HTMLElement;
+            expect(card).toBeDefined();
+            expect(card.classList.contains('entry-sleep')).toBe(true);
+            expect(card.classList.contains('entry-sleep-collapsed')).toBe(true);
+            expect(card.style.height).toBe('38px');
+
+            const sleepTag = card.querySelector('.entry-sleep-tag');
+            expect(sleepTag).toBeDefined();
+            expect(sleepTag?.textContent).toContain('🌙');
+
+            const toggleIcon = card.querySelector('.entry-icon-toggle') as HTMLElement;
+            expect(toggleIcon).toBeDefined();
+
+            // Click toggle to expand
+            toggleIcon.click();
+            expect(card.classList.contains('entry-sleep-expanded')).toBe(true);
+            expect(card.classList.contains('entry-sleep-collapsed')).toBe(false);
+            expect(parseFloat(card.style.height)).toBeGreaterThan(38);
+
+            // Click toggle to collapse again
+            toggleIcon.click();
+            expect(card.classList.contains('entry-sleep-collapsed')).toBe(true);
+            expect(card.style.height).toBe('38px');
+        });
+    });
 });
