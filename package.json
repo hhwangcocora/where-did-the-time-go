@@ -1,7 +1,7 @@
 {
-  "name": "where-did-the-time-go",
+  "name": "personal-time-tracker",
   "version": "1.0.9",
-  "description": "Obsidian plugin to track where your time went",
+  "description": "Obsidian plugin for personal time tracking and daily reflection",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

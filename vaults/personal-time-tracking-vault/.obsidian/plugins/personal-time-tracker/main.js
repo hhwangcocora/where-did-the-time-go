@@ -128,7 +128,7 @@ var require_extend = __commonJS({
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => WhereDidTheTimeGoPlugin
+  default: () => PersonalTimeTrackerPlugin
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian9 = require("obsidian");
@@ -302,8 +302,8 @@ var DEFAULT_SETTINGS = {
   debugMode: false,
   hideTablesInPreview: true
 };
-var VIEW_TYPE_TIMELINE = "where-did-the-time-go-timeline";
-var VIEW_TYPE_REPORTS = "where-did-the-time-go-reports";
+var VIEW_TYPE_TIMELINE = "personal-time-tracker-timeline";
+var VIEW_TYPE_REPORTS = "personal-time-tracker-reports";
 
 // src/settings.ts
 var import_obsidian = require("obsidian");
@@ -10747,7 +10747,7 @@ var Logger = class {
   }
 };
 Logger.debugMode = false;
-Logger.prefix = "[WDTTG]";
+Logger.prefix = "[PTT]";
 
 // src/data/TableParser.ts
 var TableParser = class {
@@ -11301,7 +11301,7 @@ ${tableContent}${diarySection}${summarySection}`.trimEnd() + "\n";
    */
   static getFileHeader() {
     return `%%
-\u26A0\uFE0F WARNING: This file is managed by the Personal Time Tracking plugin.
+\u26A0\uFE0F WARNING: This file is managed by the Personal Time Tracker plugin.
 Do not edit activities manually - your changes may be overwritten.
 Use the Timeline view to create, edit, or delete entries.
 %%`;
@@ -16923,9 +16923,9 @@ var ReportsView = class extends import_obsidian8.ItemView {
 };
 
 // main.ts
-var WhereDidTheTimeGoPlugin = class extends import_obsidian9.Plugin {
+var PersonalTimeTrackerPlugin = class extends import_obsidian9.Plugin {
   async onload() {
-    Logger.debug("Loading Where Did The Time Go plugin");
+    Logger.debug("Loading Personal Time Tracker plugin");
     await this.loadSettings();
     Logger.setDebugMode(this.settings.debugMode);
     this.schemaManager = new SchemaManager(this.app.vault, this.settings);
@@ -17001,7 +17001,7 @@ var WhereDidTheTimeGoPlugin = class extends import_obsidian9.Plugin {
     );
   }
   onunload() {
-    Logger.debug("Unloading Where Did The Time Go plugin");
+    Logger.debug("Unloading Personal Time Tracker plugin");
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

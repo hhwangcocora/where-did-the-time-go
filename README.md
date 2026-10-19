@@ -1,4 +1,4 @@
-# Where Did The Time Go?
+# Personal Time Tracker
 
 **A visual personal time tracking and daily reflection plugin for Obsidian.** An interactive timeline to log your focus blocks, daily reflection diaries co-located with your tracked activities, and configurable multi-level reports to see where your time went. Your data stays in your vault as plain markdown tables and journals — no cloud, no sync, no subscriptions.
 
@@ -48,7 +48,7 @@ Analyze where your hours actually went across customizable hierarchies:
 Your data lives in `TimeTracking/YYYY-MM.md` files:
 ```markdown
 %%
-⚠️ WARNING: This file is managed by the "Where Did The Time Go" plugin.
+⚠️ WARNING: This file is managed by the "Personal Time Tracker" plugin.
 Do not edit manually - your changes may be overwritten.
 %%
 

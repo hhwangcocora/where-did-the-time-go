@@ -692,7 +692,7 @@ export class TableParser {
      */
     static getFileHeader(): string {
         return `%%
-⚠️ WARNING: This file is managed by the Personal Time Tracking plugin.
+⚠️ WARNING: This file is managed by the Personal Time Tracker plugin.
 Do not edit activities manually - your changes may be overwritten.
 Use the Timeline view to create, edit, or delete entries.
 %%`;

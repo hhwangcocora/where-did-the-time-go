@@ -4,7 +4,7 @@
  */
 export class Logger {
     private static debugMode = false;
-    private static prefix = '[WDTTG]';
+    private static prefix = '[PTT]';
 
     static setDebugMode(enabled: boolean): void {
         this.debugMode = enabled;

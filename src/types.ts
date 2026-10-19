@@ -1,7 +1,7 @@
 import { getColorForValue, FIXED_LOCATION_COLOR } from './utils/colors';
 
 /**
- * Core types for Where Did The Time Go plugin
+ * Core types for Personal Time Tracker plugin
  */
 
 /**
@@ -375,12 +375,12 @@ export type ParsedMonth = MonthlyData;
 /**
  * View type identifier for the timeline view
  */
-export const VIEW_TYPE_TIMELINE = 'where-did-the-time-go-timeline';
+export const VIEW_TYPE_TIMELINE = 'personal-time-tracker-timeline';
 
 /**
  * View type identifier for the reports view
  */
-export const VIEW_TYPE_REPORTS = 'where-did-the-time-go-reports';
+export const VIEW_TYPE_REPORTS = 'personal-time-tracker-reports';
 
 /**
  * Time range preset options for reports

@@ -10,13 +10,13 @@ import { DiaryModal } from './src/modals/DiaryModal';
 import { TableParser } from './src/data/TableParser';
 import { Logger } from './src/utils/Logger';
 
-export default class WhereDidTheTimeGoPlugin extends Plugin {
+export default class PersonalTimeTrackerPlugin extends Plugin {
     settings: TimeTrackerSettings;
     dataManager: DataManager;
     schemaManager: SchemaManager;
 
     async onload(): Promise<void> {
-        Logger.debug('Loading Where Did The Time Go plugin');
+        Logger.debug('Loading Personal Time Tracker plugin');
 
         // Load settings
         await this.loadSettings();
@@ -131,7 +131,7 @@ export default class WhereDidTheTimeGoPlugin extends Plugin {
     }
 
     onunload(): void {
-        Logger.debug('Unloading Where Did The Time Go plugin');
+        Logger.debug('Unloading Personal Time Tracker plugin');
     }
 
     async loadSettings(): Promise<void> {

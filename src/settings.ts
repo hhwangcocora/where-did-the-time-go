@@ -1,10 +1,10 @@
 import { App, PluginSettingTab, Setting, TFile, Notice } from 'obsidian';
-import type WhereDidTheTimeGoPlugin from '../main';
+import type PersonalTimeTrackerPlugin from '../main';
 
 export class TimeTrackerSettingTab extends PluginSettingTab {
-    plugin: WhereDidTheTimeGoPlugin;
+    plugin: PersonalTimeTrackerPlugin;
 
-    constructor(app: App, plugin: WhereDidTheTimeGoPlugin) {
+    constructor(app: App, plugin: PersonalTimeTrackerPlugin) {
         super(app, plugin);
         this.plugin = plugin;
     }
