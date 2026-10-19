@@ -219,6 +219,7 @@ export class DataManager {
         // Determine which months we need to load
         // Include month before startDate in case an entry started there and spans into our range
         const monthBefore = new Date(startDate);
+        monthBefore.setDate(1);
         monthBefore.setMonth(monthBefore.getMonth() - 1);
         monthsToLoad.add(TableParser.getMonthString(monthBefore));
 
@@ -297,15 +298,19 @@ export class DataManager {
 
         const fullEntry: TimeEntry = {
             ...entry,
+            start: TableParser.formatTime(startDateTime),
+            end: TableParser.formatTime(endDateTime),
             startDateTime,
             endDateTime,
             durationMinutes,
             lineNumber: 0, // Row index will be set after save
         };
 
-        // Check for overlaps
-        const existingEntries = await this.loadEntriesForDate(startDateTime);
+        // Check for overlaps across the entry's span (including overnight entries from previous day)
+        const queryStart = new Date(startDateTime.getTime() - 24 * 60 * 60 * 1000);
+        const existingEntries = await this.loadDateRange(queryStart, endDateTime);
         if (this.hasOverlap(fullEntry, existingEntries)) {
+            new Notice('Entry overlaps with an existing time entry');
             throw new Error('Entry overlaps with an existing time entry');
         }
 
@@ -338,8 +343,27 @@ export class DataManager {
 
         // Recalculate datetime if times changed
         if (newEntry.start || newEntry.end || newEntry.date) {
-            const startDateTime = TableParser.parseDateTime(updatedEntry.start);
-            const endDateTime = TableParser.parseDateTime(updatedEntry.end);
+            const baseDate = newEntry.date || oldEntry.date;
+            const rawStart = newEntry.start ?? TableParser.formatDateTime(oldEntry.startDateTime);
+            const startInput = /^\d{2}:\d{2}$/.test(rawStart.trim())
+                ? `${baseDate} ${rawStart.trim()}`
+                : rawStart;
+            const startDateTime = TableParser.parseDateTime(startInput);
+
+            let endDateTime: Date | null = null;
+            if (newEntry.end !== undefined) {
+                const rawEnd = newEntry.end.trim();
+                if (/^\d{2}:\d{2}$/.test(rawEnd)) {
+                    endDateTime = TableParser.parseDateTime(`${baseDate} ${rawEnd}`);
+                    if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+                        endDateTime.setDate(endDateTime.getDate() + 1);
+                    }
+                } else {
+                    endDateTime = TableParser.parseDateTime(rawEnd);
+                }
+            } else if (startDateTime) {
+                endDateTime = new Date(startDateTime.getTime() + oldEntry.durationMinutes * 60000);
+            }
 
             if (!startDateTime || !endDateTime) {
                 throw new Error('Invalid datetime format');
@@ -347,6 +371,8 @@ export class DataManager {
 
             updatedEntry.startDateTime = startDateTime;
             updatedEntry.endDateTime = endDateTime;
+            updatedEntry.start = TableParser.formatTime(startDateTime);
+            updatedEntry.end = TableParser.formatTime(endDateTime);
             updatedEntry.durationMinutes = Math.round(
                 (endDateTime.getTime() - startDateTime.getTime()) / 60000
             );
@@ -357,10 +383,12 @@ export class DataManager {
         const newMonthStr = updatedEntry.date.substring(0, 7);
         const monthChanged = oldMonthStr !== newMonthStr;
 
-        // Check for overlaps (excluding self)
-        const existingEntries = await this.loadEntriesForDate(updatedEntry.startDateTime);
+        // Check for overlaps (excluding self) across the entry's span
+        const queryStart = new Date(updatedEntry.startDateTime.getTime() - 24 * 60 * 60 * 1000);
+        const existingEntries = await this.loadDateRange(queryStart, updatedEntry.endDateTime);
         const otherEntries = existingEntries.filter(e => !this.isSameEntry(e, oldEntry));
         if (this.hasOverlap(updatedEntry, otherEntries)) {
+            new Notice('Entry overlaps with an existing time entry');
             throw new Error('Entry overlaps with an existing time entry');
         }
 

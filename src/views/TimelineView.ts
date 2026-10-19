@@ -34,6 +34,7 @@ export class TimelineView extends ItemView {
     // Dimensions
     private dayHeight: number = 0; // Calculated as 24 * hourHeight
     private resizeObserver: ResizeObserver | null = null;
+    private isShiftingCenter: boolean = false;
 
     // Drag selection state (for creating new entries)
     private isDragging: boolean = false;
@@ -319,6 +320,8 @@ export class TimelineView extends ItemView {
         // Update the visible date label
         this.updateVisibleDateLabel();
 
+        if (this.isShiftingCenter) return;
+
         // Edge threshold scales with buffer size (max 3 days, min half a day)
         const edgeThreshold = this.dayHeight * Math.max(0.5, Math.min(this.visibleDaysBuffer, 3));
 
@@ -335,21 +338,27 @@ export class TimelineView extends ItemView {
      * Shift the center date and re-render while maintaining visual position
      */
     private async shiftCenter(days: number): Promise<void> {
-        // Save current scroll position relative to center
-        const oldScrollTop = this.timelineContainer.scrollTop;
+        if (this.isShiftingCenter) return;
+        this.isShiftingCenter = true;
+        try {
+            // Save current scroll position relative to center
+            const oldScrollTop = this.timelineContainer.scrollTop;
 
-        // Update center date
-        this.centerDate.setDate(this.centerDate.getDate() + days);
+            // Update center date
+            this.centerDate.setDate(this.centerDate.getDate() + days);
 
-        // Load new data range
-        await this.loadVisibleRange();
-        this.renderVisibleDays();
+            // Load new data range
+            await this.loadVisibleRange();
+            this.renderVisibleDays();
 
-        // Adjust scroll position to compensate for the shift
-        const scrollAdjustment = days * this.dayHeight;
-        this.timelineContainer.scrollTop = oldScrollTop - scrollAdjustment;
+            // Adjust scroll position to compensate for the shift
+            const scrollAdjustment = days * this.dayHeight;
+            this.timelineContainer.scrollTop = oldScrollTop - scrollAdjustment;
 
-        Logger.log('Shifted center by', days, 'days, new center:', this.centerDate.toDateString());
+            Logger.log('Shifted center by', days, 'days, new center:', this.centerDate.toDateString());
+        } finally {
+            this.isShiftingCenter = false;
+        }
     }
 
     /**
@@ -732,6 +741,13 @@ export class TimelineView extends ItemView {
                 colorValStr = entry.activity;
             }
 
+            if (colorValStr && colorField?.options) {
+                const matchedOpt = colorField.options.find(
+                    o => o.id.toLowerCase() === colorValStr.toLowerCase() || o.label.toLowerCase() === colorValStr.toLowerCase()
+                );
+                if (matchedOpt) colorValStr = matchedOpt.label;
+            }
+
             if (colorValStr) {
                 const catSeg = footer.createSpan('powerline-seg');
                 catSeg.setText(colorValStr);
@@ -910,28 +926,34 @@ export class TimelineView extends ItemView {
         // Calculate new times based on drag
         const entry = this.entryDragEntry;
         const card = this.entryDragCard;
+        const dragMode = this.entryDragMode;
 
         const newTop = parseFloat(card.style.top);
         const newHeight = parseFloat(card.style.height);
 
-        // Convert pixel positions to times
-        const newStartMinutes = (newTop / this.settings.hourHeight) * 60;
-        const newDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
+        // Convert pixel positions to times and snap to 15-minute increments first
+        const rawStartMinutes = (newTop / this.settings.hourHeight) * 60;
+        const rawDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
+        const snappedStartTotalMins = Math.round(rawStartMinutes / 15) * 15;
+        const snappedDurationMins = dragMode === 'move'
+            ? entry.durationMinutes
+            : Math.max(15, Math.round(rawDurationMinutes / 15) * 15);
 
-        // Calculate which day the entry is now on
-        const dayIndex = Math.floor(newTop / this.dayHeight);
-        const minutesInDay = newStartMinutes - (dayIndex * 24 * 60);
+        // Calculate which day the entry starts on
+        const dayIndex = Math.floor(snappedStartTotalMins / (24 * 60));
+        const minutesInDay = ((snappedStartTotalMins % (24 * 60)) + 24 * 60) % (24 * 60);
 
         // Get the actual date for this position
         const newDate = new Date(this.centerDate);
         newDate.setDate(newDate.getDate() + dayIndex - this.visibleDaysBuffer);
 
-        // Calculate start and end times
-        const startHours = Math.floor(minutesInDay / 60) % 24;
-        const startMins = Math.round(minutesInDay % 60 / 15) * 15; // Round to 15 min
-        const endTotalMins = minutesInDay + newDurationMinutes;
-        const endHours = Math.floor(endTotalMins / 60) % 24;
-        const endMins = Math.round(endTotalMins % 60 / 15) * 15;
+        // Calculate start and end times (guaranteed 0..23 hours and 0..45 minutes)
+        const startHours = Math.floor(minutesInDay / 60);
+        const startMins = minutesInDay % 60;
+        const endTotalMins = minutesInDay + snappedDurationMins;
+        const endMinutesInDay = ((endTotalMins % (24 * 60)) + 24 * 60) % (24 * 60);
+        const endHours = Math.floor(endMinutesInDay / 60);
+        const endMins = endMinutesInDay % 60;
 
         // Determine end date (might span multiple days)
         const endDate = new Date(newDate);
@@ -992,20 +1014,21 @@ export class TimelineView extends ItemView {
         const newTop = parseFloat(this.entryDragCard.style.top);
         const newHeight = parseFloat(this.entryDragCard.style.height);
 
-        // Convert pixel positions to times
-        const newStartMinutes = (newTop / this.settings.hourHeight) * 60;
-        const newDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
+        // Convert pixel positions to times and snap to 15-minute increments first
+        const rawStartMinutes = (newTop / this.settings.hourHeight) * 60;
+        const rawDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
+        const snappedStartTotalMins = Math.round(rawStartMinutes / 15) * 15;
+        const snappedDurationMins = this.entryDragMode === 'move' && this.entryDragEntry
+            ? this.entryDragEntry.durationMinutes
+            : Math.max(15, Math.round(rawDurationMinutes / 15) * 15);
 
-        // Calculate which day and time
-        const dayIndex = Math.floor(newTop / this.dayHeight);
-        const minutesInDay = newStartMinutes - (dayIndex * 24 * 60);
-        const endMinutesInDay = minutesInDay + newDurationMinutes;
+        const minutesInDay = ((snappedStartTotalMins % (24 * 60)) + 24 * 60) % (24 * 60);
+        const endMinutesInDay = ((minutesInDay + snappedDurationMins) % (24 * 60) + 24 * 60) % (24 * 60);
 
-        // Round to 15 minutes
-        const startHours = Math.floor(minutesInDay / 60) % 24;
-        const startMins = Math.round(minutesInDay % 60 / 15) * 15;
-        const endHours = Math.floor(endMinutesInDay / 60) % 24;
-        const endMins = Math.round(endMinutesInDay % 60 / 15) * 15;
+        const startHours = Math.floor(minutesInDay / 60);
+        const startMins = minutesInDay % 60;
+        const endHours = Math.floor(endMinutesInDay / 60);
+        const endMins = endMinutesInDay % 60;
 
         const startTime = `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')}`;
         const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
@@ -1197,24 +1220,25 @@ export class TimelineView extends ItemView {
                 const itemStr = String(item).trim();
                 if (!itemStr) continue;
 
+                const matchedOpt = field.options?.find(o =>
+                    o.id.toLowerCase() === itemStr.toLowerCase() ||
+                    o.label.toLowerCase() === itemStr.toLowerCase()
+                );
+                const displayLabel = matchedOpt ? matchedOpt.label : itemStr;
+
                 // Location should be in one fixed color; only category has different colors
                 let color = FIXED_LOCATION_COLOR;
                 if (!isLocation) {
-                    if (field.options) {
-                        const opt = field.options.find(o =>
-                            o.id.toLowerCase() === itemStr.toLowerCase() ||
-                            o.label.toLowerCase() === itemStr.toLowerCase()
-                        );
-                        if (opt?.color) color = opt.color;
-                    }
-                    if (!color) {
-                        color = getColorForValue(itemStr);
+                    if (matchedOpt?.color) {
+                        color = matchedOpt.color;
+                    } else {
+                        color = getColorForValue(displayLabel);
                     }
                 }
 
                 badges.push({
                     label: field.label,
-                    text: itemStr,
+                    text: displayLabel,
                     color,
                     isLocation,
                 });
@@ -1284,6 +1308,7 @@ export class TimelineView extends ItemView {
         ];
 
         const schema = this.dataManager.getSchema();
+        let hasRenderedNotesField = false;
         for (const field of schema.fields) {
             if (field.ui?.timelineRole === 'title') continue;
 
@@ -1292,11 +1317,14 @@ export class TimelineView extends ItemView {
                 const displayVal = Array.isArray(val) ? val.join(', ') : String(val);
                 if (displayVal.trim()) {
                     parts.push(`${field.label}: ${displayVal}`);
+                    if (field.id === 'notes' || field.id === 'linked_note' || field.label.toLowerCase() === 'notes') {
+                        hasRenderedNotesField = true;
+                    }
                 }
             }
         }
 
-        if (entry.linkedNote) {
+        if (entry.linkedNote && !hasRenderedNotesField) {
             parts.push(`Note: ${entry.linkedNote}`);
         }
 
@@ -1399,11 +1427,12 @@ export class TimelineView extends ItemView {
         const clickedDate = new Date(this.centerDate);
         clickedDate.setDate(clickedDate.getDate() + dayIndex);
 
-        // Determine what time was clicked (within the day)
-        const yWithinDay = clickY % this.dayHeight;
+        // Determine what time was clicked (within the day), clamped so 23:55 rounds to 23:45 on the clicked day
+        const yWithinDay = ((clickY % this.dayHeight) + this.dayHeight) % this.dayHeight;
         const hoursFromMidnight = yWithinDay / this.settings.hourHeight;
-        const hours = Math.floor(hoursFromMidnight);
-        const minutes = Math.round((hoursFromMidnight - hours) * 60 / 15) * 15; // Round to 15 min
+        const snappedMins = Math.min(23 * 60 + 45, Math.max(0, Math.round((hoursFromMidnight * 60) / 15) * 15));
+        const hours = Math.floor(snappedMins / 60);
+        const minutes = snappedMins % 60;
 
         const startTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 

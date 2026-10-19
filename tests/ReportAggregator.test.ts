@@ -369,5 +369,27 @@ describe('ReportAggregator', () => {
             expect(report.topCategoryMinutes).toBe(0);
             expect(report.items).toEqual([]);
         });
+
+        it('normalizes enum option slug IDs and display labels into the same category', () => {
+            const entries: TimeEntry[] = [
+                createEntry({ date: '2026-10-15', start: '09:00', end: '10:00', durationMinutes: 60, category: 'Deep Work', activity_name: 'Coding' }),
+                createEntry({ date: '2026-10-15', start: '10:00', end: '11:30', durationMinutes: 90, category: 'deep-work', activity_name: 'Coding' }),
+            ];
+
+            const report = ReportAggregator.calculateCategoryReport({
+                entries,
+                schema: mockSchema,
+                rangeStart,
+                rangeEnd,
+            });
+
+            expect(report.categoriesCount).toBe(1);
+            expect(report.topCategoryName).toBe('Deep Work');
+            expect(report.topCategoryMinutes).toBe(150);
+            expect(report.items).toHaveLength(1);
+            expect(report.items[0].category).toBe('Deep Work');
+            expect(report.items[0].totalMinutes).toBe(150);
+            expect(report.items[0].entryCount).toBe(2);
+        });
     });
 });

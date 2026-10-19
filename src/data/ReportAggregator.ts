@@ -50,46 +50,61 @@ export interface ReportAggregationResult {
  * Extract field value from a time entry for a given dimension ID
  */
 export function getEntryFieldValue(entry: TimeEntry, fieldId: string, schema: TrackingSchemaConfig): string {
-    // 1. Direct match on entry.fields
-    if (entry.fields && entry.fields[fieldId] !== undefined && entry.fields[fieldId] !== null) {
-        const val = entry.fields[fieldId];
-        if (Array.isArray(val)) {
-            const items = val.filter(v => typeof v === 'string' && v.trim().length > 0);
-            return items.length > 0 ? items.join(', ') : '(None)';
-        }
-        if (typeof val === 'string') {
-            const trimmed = val.trim();
-            return trimmed.length > 0 ? trimmed : '(None)';
-        }
-    }
-
-    // 2. Check schema field aliases if defined
     const fieldDef = schema.fields.find(
         f => f.id.toLowerCase() === fieldId.toLowerCase() || f.label.toLowerCase() === fieldId.toLowerCase()
     );
+
+    const normalizeSingle = (raw: string): string => {
+        const trimmed = raw.trim();
+        if (!trimmed) return '';
+        if (fieldDef?.options && fieldDef.options.length > 0) {
+            const lower = trimmed.toLowerCase();
+            const match = fieldDef.options.find(
+                opt =>
+                    opt.id.toLowerCase() === lower ||
+                    opt.label.toLowerCase() === lower ||
+                    (opt.aliases && opt.aliases.some(a => a.toLowerCase() === lower))
+            );
+            if (match) return match.label;
+        }
+        return trimmed;
+    };
+
+    const formatExtracted = (val: unknown): string | null => {
+        if (Array.isArray(val)) {
+            const items = val
+                .filter(v => typeof v === 'string' && v.trim().length > 0)
+                .map(v => normalizeSingle(v as string))
+                .filter(Boolean);
+            return items.length > 0 ? items.join(', ') : null;
+        }
+        if (typeof val === 'string') {
+            const normalized = normalizeSingle(val);
+            return normalized.length > 0 ? normalized : null;
+        }
+        return null;
+    };
+
+    // 1. Direct match on entry.fields
+    if (entry.fields && entry.fields[fieldId] !== undefined && entry.fields[fieldId] !== null) {
+        const formatted = formatExtracted(entry.fields[fieldId]);
+        return formatted !== null ? formatted : '(None)';
+    }
+
+    // 2. Check schema field definition & aliases if defined
     if (fieldDef) {
         // Check field.id in entry.fields
         if (entry.fields && entry.fields[fieldDef.id] !== undefined && entry.fields[fieldDef.id] !== null) {
-            const val = entry.fields[fieldDef.id];
-            if (Array.isArray(val)) {
-                const items = val.filter(v => typeof v === 'string' && v.trim().length > 0);
-                if (items.length > 0) return items.join(', ');
-            } else if (typeof val === 'string' && val.trim().length > 0) {
-                return val.trim();
-            }
+            const formatted = formatExtracted(entry.fields[fieldDef.id]);
+            if (formatted !== null) return formatted;
         }
 
         // Check aliases in entry.fields
         if (fieldDef.aliases) {
             for (const alias of fieldDef.aliases) {
                 if (entry.fields && entry.fields[alias] !== undefined && entry.fields[alias] !== null) {
-                    const val = entry.fields[alias];
-                    if (Array.isArray(val)) {
-                        const items = val.filter(v => typeof v === 'string' && v.trim().length > 0);
-                        if (items.length > 0) return items.join(', ');
-                    } else if (typeof val === 'string' && val.trim().length > 0) {
-                        return val.trim();
-                    }
+                    const formatted = formatExtracted(entry.fields[alias]);
+                    if (formatted !== null) return formatted;
                 }
             }
         }
@@ -98,12 +113,12 @@ export function getEntryFieldValue(entry: TimeEntry, fieldId: string, schema: Tr
     // 3. Check unmapped fields
     if (entry.unmappedFields) {
         if (entry.unmappedFields[fieldId] && entry.unmappedFields[fieldId].trim().length > 0) {
-            return entry.unmappedFields[fieldId].trim();
+            return normalizeSingle(entry.unmappedFields[fieldId]);
         }
         if (fieldDef?.aliases) {
             for (const alias of fieldDef.aliases) {
                 if (entry.unmappedFields[alias] && entry.unmappedFields[alias].trim().length > 0) {
-                    return entry.unmappedFields[alias].trim();
+                    return normalizeSingle(entry.unmappedFields[alias]);
                 }
             }
         }
@@ -112,7 +127,7 @@ export function getEntryFieldValue(entry: TimeEntry, fieldId: string, schema: Tr
     // 4. Fallback to entry object properties (e.g. legacy description, project, activity)
     const anyEntry = entry as unknown as Record<string, unknown>;
     if (typeof anyEntry[fieldId] === 'string' && (anyEntry[fieldId] as string).trim().length > 0) {
-        return (anyEntry[fieldId] as string).trim();
+        return normalizeSingle(anyEntry[fieldId] as string);
     }
 
     return '(None)';

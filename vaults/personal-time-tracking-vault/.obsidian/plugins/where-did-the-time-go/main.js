@@ -11478,6 +11478,7 @@ var _DataManager = class {
     const entries = [];
     const monthsToLoad = /* @__PURE__ */ new Set();
     const monthBefore = new Date(startDate);
+    monthBefore.setDate(1);
     monthBefore.setMonth(monthBefore.getMonth() - 1);
     monthsToLoad.add(TableParser.getMonthString(monthBefore));
     const endMonth = TableParser.getMonthString(endDate);
@@ -11533,14 +11534,18 @@ var _DataManager = class {
     const durationMinutes = Math.round((endDateTime.getTime() - startDateTime.getTime()) / 6e4);
     const fullEntry = {
       ...entry,
+      start: TableParser.formatTime(startDateTime),
+      end: TableParser.formatTime(endDateTime),
       startDateTime,
       endDateTime,
       durationMinutes,
       lineNumber: 0
       // Row index will be set after save
     };
-    const existingEntries = await this.loadEntriesForDate(startDateTime);
+    const queryStart = new Date(startDateTime.getTime() - 24 * 60 * 60 * 1e3);
+    const existingEntries = await this.loadDateRange(queryStart, endDateTime);
     if (this.hasOverlap(fullEntry, existingEntries)) {
+      new import_obsidian2.Notice("Entry overlaps with an existing time entry");
       throw new Error("Entry overlaps with an existing time entry");
     }
     const parsed = await this.loadMonth(monthStr);
@@ -11554,19 +11559,38 @@ var _DataManager = class {
    * Update an existing entry
    */
   async updateEntry(oldEntry, newEntry) {
+    var _a;
     const oldMonthStr = oldEntry.date.substring(0, 7);
     const updatedEntry = {
       ...oldEntry,
       ...newEntry
     };
     if (newEntry.start || newEntry.end || newEntry.date) {
-      const startDateTime = TableParser.parseDateTime(updatedEntry.start);
-      const endDateTime = TableParser.parseDateTime(updatedEntry.end);
+      const baseDate = newEntry.date || oldEntry.date;
+      const rawStart = (_a = newEntry.start) != null ? _a : TableParser.formatDateTime(oldEntry.startDateTime);
+      const startInput = /^\d{2}:\d{2}$/.test(rawStart.trim()) ? `${baseDate} ${rawStart.trim()}` : rawStart;
+      const startDateTime = TableParser.parseDateTime(startInput);
+      let endDateTime = null;
+      if (newEntry.end !== void 0) {
+        const rawEnd = newEntry.end.trim();
+        if (/^\d{2}:\d{2}$/.test(rawEnd)) {
+          endDateTime = TableParser.parseDateTime(`${baseDate} ${rawEnd}`);
+          if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+            endDateTime.setDate(endDateTime.getDate() + 1);
+          }
+        } else {
+          endDateTime = TableParser.parseDateTime(rawEnd);
+        }
+      } else if (startDateTime) {
+        endDateTime = new Date(startDateTime.getTime() + oldEntry.durationMinutes * 6e4);
+      }
       if (!startDateTime || !endDateTime) {
         throw new Error("Invalid datetime format");
       }
       updatedEntry.startDateTime = startDateTime;
       updatedEntry.endDateTime = endDateTime;
+      updatedEntry.start = TableParser.formatTime(startDateTime);
+      updatedEntry.end = TableParser.formatTime(endDateTime);
       updatedEntry.durationMinutes = Math.round(
         (endDateTime.getTime() - startDateTime.getTime()) / 6e4
       );
@@ -11574,9 +11598,11 @@ var _DataManager = class {
     }
     const newMonthStr = updatedEntry.date.substring(0, 7);
     const monthChanged = oldMonthStr !== newMonthStr;
-    const existingEntries = await this.loadEntriesForDate(updatedEntry.startDateTime);
+    const queryStart = new Date(updatedEntry.startDateTime.getTime() - 24 * 60 * 60 * 1e3);
+    const existingEntries = await this.loadDateRange(queryStart, updatedEntry.endDateTime);
     const otherEntries = existingEntries.filter((e) => !this.isSameEntry(e, oldEntry));
     if (this.hasOverlap(updatedEntry, otherEntries)) {
+      new import_obsidian2.Notice("Entry overlaps with an existing time entry");
       throw new Error("Entry overlaps with an existing time entry");
     }
     if (monthChanged) {
@@ -12828,7 +12854,7 @@ var EntryModal = class extends import_obsidian5.Modal {
       if (data.endTime) {
         const startMins = this.timeToMinutes(this.startTimeValue);
         const endMins = this.timeToMinutes(data.endTime);
-        if (endMins < startMins) {
+        if (endMins <= startMins) {
           const nextDay = new Date(date);
           nextDay.setDate(nextDay.getDate() + 1);
           this.endDateValue = TableParser.getDateString(nextDay);
@@ -12837,8 +12863,16 @@ var EntryModal = class extends import_obsidian5.Modal {
         }
         this.endTimeValue = data.endTime;
       } else {
-        this.endDateValue = this.startDateValue;
         this.endTimeValue = this.addHourToTime(this.startTimeValue);
+        const startMins = this.timeToMinutes(this.startTimeValue);
+        const endMins = this.timeToMinutes(this.endTimeValue);
+        if (endMins <= startMins) {
+          const nextDay = new Date(date);
+          nextDay.setDate(nextDay.getDate() + 1);
+          this.endDateValue = TableParser.getDateString(nextDay);
+        } else {
+          this.endDateValue = this.startDateValue;
+        }
       }
       this.durationValue = this.calculateDurationFromDates();
       for (const field of this.schema.fields) {
@@ -12852,7 +12886,7 @@ var EntryModal = class extends import_obsidian5.Modal {
           this.fieldValues[field.id] = field.defaultValue;
         } else if (field.type === "enum" && field.options && field.options.length > 0) {
           if (field.required) {
-            this.fieldValues[field.id] = field.options[0].id;
+            this.fieldValues[field.id] = field.options[0].label;
           } else {
             this.fieldValues[field.id] = "";
           }
@@ -13050,10 +13084,17 @@ var EntryModal = class extends import_obsidian5.Modal {
           const matchingOpt = (_a2 = field.options) == null ? void 0 : _a2.find(
             (o) => o.id === currentVal || o.label.toLowerCase() === currentVal.toLowerCase()
           );
+          if (matchingOpt) {
+            this.fieldValues[field.id] = matchingOpt.label;
+          }
           const selectedId = matchingOpt ? matchingOpt.id : currentVal;
           dropdown.setValue(selectedId);
           dropdown.onChange((val) => {
-            this.fieldValues[field.id] = val;
+            var _a3;
+            const selectedOpt = (_a3 = field.options) == null ? void 0 : _a3.find(
+              (o) => o.id === val || o.label.toLowerCase() === val.toLowerCase()
+            );
+            this.fieldValues[field.id] = selectedOpt ? selectedOpt.label : val;
           });
         });
       }
@@ -13080,7 +13121,7 @@ var EntryModal = class extends import_obsidian5.Modal {
         });
         setting.addButton((btn) => {
           btn.setButtonText("Create new").setTooltip("Create a new linked note").onClick(() => {
-            this.showCreateNoteInput(container, noteInput);
+            this.showCreateNoteInput(container, noteInput, field.id);
           });
         });
       } else if (field.multiple) {
@@ -13495,7 +13536,7 @@ var EntryModal = class extends import_obsidian5.Modal {
   getCurrentTimeRounded() {
     const now = new Date();
     const minutes = Math.round(now.getMinutes() / 15) * 15;
-    const hours = now.getHours() + (minutes >= 60 ? 1 : 0);
+    const hours = (now.getHours() + (minutes >= 60 ? 1 : 0)) % 24;
     const adjustedMinutes = minutes % 60;
     return `${hours.toString().padStart(2, "0")}:${adjustedMinutes.toString().padStart(2, "0")}`;
   }
@@ -13562,8 +13603,14 @@ var EntryModal = class extends import_obsidian5.Modal {
    */
   updateEndFromDuration() {
     const durationMins = this.parseDurationToMinutes(this.durationValue);
-    if (durationMins <= 0)
+    if (durationMins <= 0) {
+      this.hasInvalidDuration = true;
+      if (this.durationInput) {
+        this.durationInput.inputEl.toggleClass("time-input-error", true);
+      }
+      this.updateOverlapUI();
       return;
+    }
     const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
     if (!Number.isFinite(start.getTime()))
       return;
@@ -13606,7 +13653,7 @@ var EntryModal = class extends import_obsidian5.Modal {
   /**
    * Show the create note input UI
    */
-  showCreateNoteInput(contentEl, linkedNoteInput) {
+  showCreateNoteInput(contentEl, linkedNoteInput, fieldId = "notes") {
     const createNoteRow = contentEl.createDiv("create-note-row");
     const maxLength = 80;
     const defaultName = `${this.startDateValue}-`;
@@ -13640,6 +13687,7 @@ var EntryModal = class extends import_obsidian5.Modal {
       }
       void this.createLinkedNote(noteName).then((notePath) => {
         linkedNoteInput.setValue(notePath);
+        this.fieldValues[fieldId] = notePath;
         this.linkedNoteValue = notePath;
         createNoteRow.remove();
         new import_obsidian5.Notice("Note created!");
@@ -14088,6 +14136,7 @@ var TimelineView = class extends import_obsidian7.ItemView {
     this.dayHeight = 0;
     // Calculated as 24 * hourHeight
     this.resizeObserver = null;
+    this.isShiftingCenter = false;
     // Drag selection state (for creating new entries)
     this.isDragging = false;
     this.dragStartY = 0;
@@ -14327,6 +14376,8 @@ var TimelineView = class extends import_obsidian7.ItemView {
     const viewportHeight = this.timelineContainer.clientHeight;
     const totalHeight = (this.visibleDaysBuffer * 2 + 1) * this.dayHeight;
     this.updateVisibleDateLabel();
+    if (this.isShiftingCenter)
+      return;
     const edgeThreshold = this.dayHeight * Math.max(0.5, Math.min(this.visibleDaysBuffer, 3));
     if (scrollTop < edgeThreshold) {
       await this.shiftCenter(-this.visibleDaysBuffer);
@@ -14338,13 +14389,20 @@ var TimelineView = class extends import_obsidian7.ItemView {
    * Shift the center date and re-render while maintaining visual position
    */
   async shiftCenter(days) {
-    const oldScrollTop = this.timelineContainer.scrollTop;
-    this.centerDate.setDate(this.centerDate.getDate() + days);
-    await this.loadVisibleRange();
-    this.renderVisibleDays();
-    const scrollAdjustment = days * this.dayHeight;
-    this.timelineContainer.scrollTop = oldScrollTop - scrollAdjustment;
-    Logger.log("Shifted center by", days, "days, new center:", this.centerDate.toDateString());
+    if (this.isShiftingCenter)
+      return;
+    this.isShiftingCenter = true;
+    try {
+      const oldScrollTop = this.timelineContainer.scrollTop;
+      this.centerDate.setDate(this.centerDate.getDate() + days);
+      await this.loadVisibleRange();
+      this.renderVisibleDays();
+      const scrollAdjustment = days * this.dayHeight;
+      this.timelineContainer.scrollTop = oldScrollTop - scrollAdjustment;
+      Logger.log("Shifted center by", days, "days, new center:", this.centerDate.toDateString());
+    } finally {
+      this.isShiftingCenter = false;
+    }
   }
   /**
    * Get the date currently visible / focal in the viewport
@@ -14632,6 +14690,13 @@ var TimelineView = class extends import_obsidian7.ItemView {
       } else if (entry.activity) {
         colorValStr = entry.activity;
       }
+      if (colorValStr && (colorField == null ? void 0 : colorField.options)) {
+        const matchedOpt = colorField.options.find(
+          (o) => o.id.toLowerCase() === colorValStr.toLowerCase() || o.label.toLowerCase() === colorValStr.toLowerCase()
+        );
+        if (matchedOpt)
+          colorValStr = matchedOpt.label;
+      }
       if (colorValStr) {
         const catSeg = footer.createSpan("powerline-seg");
         catSeg.setText(colorValStr);
@@ -14752,19 +14817,23 @@ var TimelineView = class extends import_obsidian7.ItemView {
     }
     const entry = this.entryDragEntry;
     const card = this.entryDragCard;
+    const dragMode = this.entryDragMode;
     const newTop = parseFloat(card.style.top);
     const newHeight = parseFloat(card.style.height);
-    const newStartMinutes = newTop / this.settings.hourHeight * 60;
-    const newDurationMinutes = newHeight / this.settings.hourHeight * 60;
-    const dayIndex = Math.floor(newTop / this.dayHeight);
-    const minutesInDay = newStartMinutes - dayIndex * 24 * 60;
+    const rawStartMinutes = newTop / this.settings.hourHeight * 60;
+    const rawDurationMinutes = newHeight / this.settings.hourHeight * 60;
+    const snappedStartTotalMins = Math.round(rawStartMinutes / 15) * 15;
+    const snappedDurationMins = dragMode === "move" ? entry.durationMinutes : Math.max(15, Math.round(rawDurationMinutes / 15) * 15);
+    const dayIndex = Math.floor(snappedStartTotalMins / (24 * 60));
+    const minutesInDay = (snappedStartTotalMins % (24 * 60) + 24 * 60) % (24 * 60);
     const newDate = new Date(this.centerDate);
     newDate.setDate(newDate.getDate() + dayIndex - this.visibleDaysBuffer);
-    const startHours = Math.floor(minutesInDay / 60) % 24;
-    const startMins = Math.round(minutesInDay % 60 / 15) * 15;
-    const endTotalMins = minutesInDay + newDurationMinutes;
-    const endHours = Math.floor(endTotalMins / 60) % 24;
-    const endMins = Math.round(endTotalMins % 60 / 15) * 15;
+    const startHours = Math.floor(minutesInDay / 60);
+    const startMins = minutesInDay % 60;
+    const endTotalMins = minutesInDay + snappedDurationMins;
+    const endMinutesInDay = (endTotalMins % (24 * 60) + 24 * 60) % (24 * 60);
+    const endHours = Math.floor(endMinutesInDay / 60);
+    const endMins = endMinutesInDay % 60;
     const endDate = new Date(newDate);
     const daysToAdd = Math.floor(endTotalMins / (24 * 60));
     if (daysToAdd > 0) {
@@ -14814,15 +14883,16 @@ var TimelineView = class extends import_obsidian7.ItemView {
       return;
     const newTop = parseFloat(this.entryDragCard.style.top);
     const newHeight = parseFloat(this.entryDragCard.style.height);
-    const newStartMinutes = newTop / this.settings.hourHeight * 60;
-    const newDurationMinutes = newHeight / this.settings.hourHeight * 60;
-    const dayIndex = Math.floor(newTop / this.dayHeight);
-    const minutesInDay = newStartMinutes - dayIndex * 24 * 60;
-    const endMinutesInDay = minutesInDay + newDurationMinutes;
-    const startHours = Math.floor(minutesInDay / 60) % 24;
-    const startMins = Math.round(minutesInDay % 60 / 15) * 15;
-    const endHours = Math.floor(endMinutesInDay / 60) % 24;
-    const endMins = Math.round(endMinutesInDay % 60 / 15) * 15;
+    const rawStartMinutes = newTop / this.settings.hourHeight * 60;
+    const rawDurationMinutes = newHeight / this.settings.hourHeight * 60;
+    const snappedStartTotalMins = Math.round(rawStartMinutes / 15) * 15;
+    const snappedDurationMins = this.entryDragMode === "move" && this.entryDragEntry ? this.entryDragEntry.durationMinutes : Math.max(15, Math.round(rawDurationMinutes / 15) * 15);
+    const minutesInDay = (snappedStartTotalMins % (24 * 60) + 24 * 60) % (24 * 60);
+    const endMinutesInDay = ((minutesInDay + snappedDurationMins) % (24 * 60) + 24 * 60) % (24 * 60);
+    const startHours = Math.floor(minutesInDay / 60);
+    const startMins = minutesInDay % 60;
+    const endHours = Math.floor(endMinutesInDay / 60);
+    const endMins = endMinutesInDay % 60;
     const startTime = `${startHours.toString().padStart(2, "0")}:${startMins.toString().padStart(2, "0")}`;
     const endTime = `${endHours.toString().padStart(2, "0")}:${endMins.toString().padStart(2, "0")}`;
     this.entryDragTooltipEl.setText(formatTimeRange(startTime, endTime, this.settings.use24HourFormat));
@@ -14970,7 +15040,7 @@ var TimelineView = class extends import_obsidian7.ItemView {
    * Excludes tags, which are displayed inside the note section
    */
   getEntryBadges(entry) {
-    var _a;
+    var _a, _b;
     const schema = this.dataManager.getSchema();
     const badgeFields = schema.fields.filter(
       (f) => {
@@ -14989,22 +15059,21 @@ var TimelineView = class extends import_obsidian7.ItemView {
         const itemStr = String(item).trim();
         if (!itemStr)
           continue;
+        const matchedOpt = (_b = field.options) == null ? void 0 : _b.find(
+          (o) => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
+        );
+        const displayLabel = matchedOpt ? matchedOpt.label : itemStr;
         let color2 = FIXED_LOCATION_COLOR;
         if (!isLocation) {
-          if (field.options) {
-            const opt = field.options.find(
-              (o) => o.id.toLowerCase() === itemStr.toLowerCase() || o.label.toLowerCase() === itemStr.toLowerCase()
-            );
-            if (opt == null ? void 0 : opt.color)
-              color2 = opt.color;
-          }
-          if (!color2) {
-            color2 = getColorForValue(itemStr);
+          if (matchedOpt == null ? void 0 : matchedOpt.color) {
+            color2 = matchedOpt.color;
+          } else {
+            color2 = getColorForValue(displayLabel);
           }
         }
         badges.push({
           label: field.label,
-          text: itemStr,
+          text: displayLabel,
           color: color2,
           isLocation
         });
@@ -15067,6 +15136,7 @@ var TimelineView = class extends import_obsidian7.ItemView {
       `${timeRange} (${this.formatDuration(entry.durationMinutes)})`
     ];
     const schema = this.dataManager.getSchema();
+    let hasRenderedNotesField = false;
     for (const field of schema.fields) {
       if (((_a = field.ui) == null ? void 0 : _a.timelineRole) === "title")
         continue;
@@ -15075,10 +15145,13 @@ var TimelineView = class extends import_obsidian7.ItemView {
         const displayVal = Array.isArray(val) ? val.join(", ") : String(val);
         if (displayVal.trim()) {
           parts.push(`${field.label}: ${displayVal}`);
+          if (field.id === "notes" || field.id === "linked_note" || field.label.toLowerCase() === "notes") {
+            hasRenderedNotesField = true;
+          }
         }
       }
     }
-    if (entry.linkedNote) {
+    if (entry.linkedNote && !hasRenderedNotesField) {
       parts.push(`Note: ${entry.linkedNote}`);
     }
     return parts.join("\n");
@@ -15167,10 +15240,11 @@ var TimelineView = class extends import_obsidian7.ItemView {
     const dayIndex = Math.floor(clickY / this.dayHeight) - this.visibleDaysBuffer;
     const clickedDate = new Date(this.centerDate);
     clickedDate.setDate(clickedDate.getDate() + dayIndex);
-    const yWithinDay = clickY % this.dayHeight;
+    const yWithinDay = (clickY % this.dayHeight + this.dayHeight) % this.dayHeight;
     const hoursFromMidnight = yWithinDay / this.settings.hourHeight;
-    const hours = Math.floor(hoursFromMidnight);
-    const minutes = Math.round((hoursFromMidnight - hours) * 60 / 15) * 15;
+    const snappedMins = Math.min(23 * 60 + 45, Math.max(0, Math.round(hoursFromMidnight * 60 / 15) * 15));
+    const hours = Math.floor(snappedMins / 60);
+    const minutes = snappedMins % 60;
     const startTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
     Logger.log("Double-clicked at:", clickedDate.toDateString(), startTime);
     this.openCreateModal(clickedDate, startTime);
@@ -15501,61 +15575,69 @@ function formatDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 function getEntryFieldValue(entry, fieldId, schema) {
-  if (entry.fields && entry.fields[fieldId] !== void 0 && entry.fields[fieldId] !== null) {
-    const val = entry.fields[fieldId];
-    if (Array.isArray(val)) {
-      const items = val.filter((v) => typeof v === "string" && v.trim().length > 0);
-      return items.length > 0 ? items.join(", ") : "(None)";
-    }
-    if (typeof val === "string") {
-      const trimmed = val.trim();
-      return trimmed.length > 0 ? trimmed : "(None)";
-    }
-  }
   const fieldDef = schema.fields.find(
     (f) => f.id.toLowerCase() === fieldId.toLowerCase() || f.label.toLowerCase() === fieldId.toLowerCase()
   );
+  const normalizeSingle = (raw) => {
+    const trimmed = raw.trim();
+    if (!trimmed)
+      return "";
+    if ((fieldDef == null ? void 0 : fieldDef.options) && fieldDef.options.length > 0) {
+      const lower = trimmed.toLowerCase();
+      const match = fieldDef.options.find(
+        (opt) => opt.id.toLowerCase() === lower || opt.label.toLowerCase() === lower || opt.aliases && opt.aliases.some((a) => a.toLowerCase() === lower)
+      );
+      if (match)
+        return match.label;
+    }
+    return trimmed;
+  };
+  const formatExtracted = (val) => {
+    if (Array.isArray(val)) {
+      const items = val.filter((v) => typeof v === "string" && v.trim().length > 0).map((v) => normalizeSingle(v)).filter(Boolean);
+      return items.length > 0 ? items.join(", ") : null;
+    }
+    if (typeof val === "string") {
+      const normalized = normalizeSingle(val);
+      return normalized.length > 0 ? normalized : null;
+    }
+    return null;
+  };
+  if (entry.fields && entry.fields[fieldId] !== void 0 && entry.fields[fieldId] !== null) {
+    const formatted = formatExtracted(entry.fields[fieldId]);
+    return formatted !== null ? formatted : "(None)";
+  }
   if (fieldDef) {
     if (entry.fields && entry.fields[fieldDef.id] !== void 0 && entry.fields[fieldDef.id] !== null) {
-      const val = entry.fields[fieldDef.id];
-      if (Array.isArray(val)) {
-        const items = val.filter((v) => typeof v === "string" && v.trim().length > 0);
-        if (items.length > 0)
-          return items.join(", ");
-      } else if (typeof val === "string" && val.trim().length > 0) {
-        return val.trim();
-      }
+      const formatted = formatExtracted(entry.fields[fieldDef.id]);
+      if (formatted !== null)
+        return formatted;
     }
     if (fieldDef.aliases) {
       for (const alias of fieldDef.aliases) {
         if (entry.fields && entry.fields[alias] !== void 0 && entry.fields[alias] !== null) {
-          const val = entry.fields[alias];
-          if (Array.isArray(val)) {
-            const items = val.filter((v) => typeof v === "string" && v.trim().length > 0);
-            if (items.length > 0)
-              return items.join(", ");
-          } else if (typeof val === "string" && val.trim().length > 0) {
-            return val.trim();
-          }
+          const formatted = formatExtracted(entry.fields[alias]);
+          if (formatted !== null)
+            return formatted;
         }
       }
     }
   }
   if (entry.unmappedFields) {
     if (entry.unmappedFields[fieldId] && entry.unmappedFields[fieldId].trim().length > 0) {
-      return entry.unmappedFields[fieldId].trim();
+      return normalizeSingle(entry.unmappedFields[fieldId]);
     }
     if (fieldDef == null ? void 0 : fieldDef.aliases) {
       for (const alias of fieldDef.aliases) {
         if (entry.unmappedFields[alias] && entry.unmappedFields[alias].trim().length > 0) {
-          return entry.unmappedFields[alias].trim();
+          return normalizeSingle(entry.unmappedFields[alias]);
         }
       }
     }
   }
   const anyEntry = entry;
   if (typeof anyEntry[fieldId] === "string" && anyEntry[fieldId].trim().length > 0) {
-    return anyEntry[fieldId].trim();
+    return normalizeSingle(anyEntry[fieldId]);
   }
   return "(None)";
 }
@@ -15878,14 +15960,23 @@ var ReportsView = class extends import_obsidian8.ItemView {
    */
   renderCustomDateInputs() {
     this.customDateInputs.empty();
+    const parseLocalDateInput = (value) => {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+      if (!match)
+        return null;
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    };
     const startLabel = this.customDateInputs.createEl("label", { text: "From: " });
     const startInput = startLabel.createEl("input", { type: "date" });
     if (this.customStartDate) {
       startInput.value = TableParser.getDateString(this.customStartDate);
     }
     startInput.addEventListener("change", (e) => {
-      this.customStartDate = new Date(e.target.value);
-      void this.loadReport();
+      const parsed = parseLocalDateInput(e.target.value);
+      if (parsed) {
+        this.customStartDate = parsed;
+        void this.loadReport();
+      }
     });
     const endLabel = this.customDateInputs.createEl("label", { text: "To: " });
     const endInput = endLabel.createEl("input", { type: "date" });
@@ -15893,8 +15984,11 @@ var ReportsView = class extends import_obsidian8.ItemView {
       endInput.value = TableParser.getDateString(this.customEndDate);
     }
     endInput.addEventListener("change", (e) => {
-      this.customEndDate = new Date(e.target.value);
-      void this.loadReport();
+      const parsed = parseLocalDateInput(e.target.value);
+      if (parsed) {
+        this.customEndDate = parsed;
+        void this.loadReport();
+      }
     });
   }
   /**
@@ -15970,9 +16064,11 @@ var ReportsView = class extends import_obsidian8.ItemView {
         return { start: lastMonthStart, end: lastMonthEnd };
       }
       case "custom": {
-        const customStart = this.customStartDate || today;
-        const customEnd = this.customEndDate || today;
-        const customEndEOD = new Date(customEnd);
+        const rawStart = this.customStartDate || today;
+        const rawEnd = this.customEndDate || today;
+        const customStart = rawStart <= rawEnd ? new Date(rawStart) : new Date(rawEnd);
+        customStart.setHours(0, 0, 0, 0);
+        const customEndEOD = rawStart <= rawEnd ? new Date(rawEnd) : new Date(rawStart);
         customEndEOD.setHours(23, 59, 59, 999);
         return { start: customStart, end: customEndEOD };
       }
@@ -16189,7 +16285,7 @@ var ReportsView = class extends import_obsidian8.ItemView {
     ).join("\n");
   }
   escapeCSVCell(value) {
-    if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
       return `"${value.replace(/"/g, '""')}"`;
     }
     return value;
@@ -16232,6 +16328,13 @@ var ReportsView = class extends import_obsidian8.ItemView {
     const sorted = [...entries].sort(
       (a, b) => a.startDateTime.getTime() - b.startDateTime.getTime()
     );
+    const summary = ReportAggregator.calculateCategoryReport({
+      entries,
+      schema,
+      rangeStart: start,
+      rangeEnd: end,
+      getEffectiveDuration: (entry, s, e) => this.dataManager.getEffectiveDuration(entry, s, e)
+    });
     const exportData = {
       exportedAt: new Date().toISOString(),
       dateRange: {
@@ -16239,9 +16342,9 @@ var ReportsView = class extends import_obsidian8.ItemView {
         end: TableParser.getDateString(end)
       },
       totalEntries: sorted.length,
-      activeDays: this.reportSummary.activeDaysCount,
-      categoriesTracked: this.reportSummary.categoriesCount,
-      categories: this.reportSummary.items.map((cat) => ({
+      activeDays: summary.activeDaysCount,
+      categoriesTracked: summary.categoriesCount,
+      categories: summary.items.map((cat) => ({
         category: cat.category,
         timeSpentMinutes: cat.totalMinutes,
         percentageOfTime: cat.percentageOfTime,

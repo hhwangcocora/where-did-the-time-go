@@ -147,6 +147,12 @@ export class DropdownComponent {
 
     constructor(containerEl?: HTMLElement) {
         this.selectEl = (typeof document !== 'undefined' ? document.createElement('select') : {}) as HTMLSelectElement;
+        if (typeof document !== 'undefined') {
+            this.selectEl.className = 'dropdown';
+            this.selectEl.addEventListener('change', () => {
+                for (const l of this.changeListeners) l(this.selectEl.value);
+            });
+        }
         if (containerEl && typeof containerEl.appendChild === 'function') {
             containerEl.appendChild(this.selectEl);
         }

@@ -333,4 +333,47 @@ describe('TimelineView Dynamic Card Helpers', () => {
             expect(container.scrollTop).toBe(7800);
         });
     });
+
+    describe('finalizeEntryDrag minute rounding', () => {
+        it('snaps 55-minute drag position to next hour (:00) instead of invalid HH:60', async () => {
+            const updateEntryMock = jest.fn<any>().mockResolvedValue(undefined);
+            (view as any).dataManager = {
+                getSchema: () => mockSchema,
+                updateEntry: updateEntryMock,
+            };
+            (view as any).refresh = jest.fn<any>().mockResolvedValue(undefined);
+            (view as any).visibleDaysBuffer = 1;
+            (view as any).dayHeight = 24 * 100;
+            (view as any).settings.hourHeight = 100;
+            (view as any).centerDate = new Date(2026, 0, 15);
+
+            const entry = createSampleEntry({
+                date: '2026-01-15',
+                start: '09:00',
+                end: '10:00',
+                durationMinutes: 60,
+            });
+
+            const card = document.createElement('div');
+            // 1 day offset (2400px) + 9h 55m (991.67px) = 3391.67px -> should snap start to 10:00, end to 11:00
+            card.style.top = `${2400 + (9 * 60 + 55) * (100 / 60)}px`;
+            card.style.height = '100px';
+
+            (view as any).entryDragMode = 'move';
+            (view as any).entryDragEntry = entry;
+            (view as any).entryDragCard = card;
+            (view as any).entryDragStartY = 100;
+
+            await (view as any).finalizeEntryDrag(200);
+
+            expect(updateEntryMock).toHaveBeenCalledWith(
+                entry,
+                expect.objectContaining({
+                    date: '2026-01-15',
+                    start: '2026-01-15 10:00',
+                    end: '2026-01-15 11:00',
+                })
+            );
+        });
+    });
 });

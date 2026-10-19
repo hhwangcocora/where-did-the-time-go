@@ -176,14 +176,23 @@ export class ReportsView extends ItemView {
     private renderCustomDateInputs(): void {
         this.customDateInputs.empty();
 
+        const parseLocalDateInput = (value: string): Date | null => {
+            const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+            if (!match) return null;
+            return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        };
+
         const startLabel = this.customDateInputs.createEl('label', { text: 'From: ' });
         const startInput = startLabel.createEl('input', { type: 'date' });
         if (this.customStartDate) {
             startInput.value = TableParser.getDateString(this.customStartDate);
         }
         startInput.addEventListener('change', (e) => {
-            this.customStartDate = new Date((e.target as HTMLInputElement).value);
-            void this.loadReport();
+            const parsed = parseLocalDateInput((e.target as HTMLInputElement).value);
+            if (parsed) {
+                this.customStartDate = parsed;
+                void this.loadReport();
+            }
         });
 
         const endLabel = this.customDateInputs.createEl('label', { text: 'To: ' });
@@ -192,8 +201,11 @@ export class ReportsView extends ItemView {
             endInput.value = TableParser.getDateString(this.customEndDate);
         }
         endInput.addEventListener('change', (e) => {
-            this.customEndDate = new Date((e.target as HTMLInputElement).value);
-            void this.loadReport();
+            const parsed = parseLocalDateInput((e.target as HTMLInputElement).value);
+            if (parsed) {
+                this.customEndDate = parsed;
+                void this.loadReport();
+            }
         });
     }
 
@@ -284,9 +296,11 @@ export class ReportsView extends ItemView {
             }
 
             case 'custom': {
-                const customStart = this.customStartDate || today;
-                const customEnd = this.customEndDate || today;
-                const customEndEOD = new Date(customEnd);
+                const rawStart = this.customStartDate || today;
+                const rawEnd = this.customEndDate || today;
+                const customStart = rawStart <= rawEnd ? new Date(rawStart) : new Date(rawEnd);
+                customStart.setHours(0, 0, 0, 0);
+                const customEndEOD = rawStart <= rawEnd ? new Date(rawEnd) : new Date(rawStart);
                 customEndEOD.setHours(23, 59, 59, 999);
                 return { start: customStart, end: customEndEOD };
             }
@@ -576,7 +590,7 @@ export class ReportsView extends ItemView {
     }
 
     private escapeCSVCell(value: string): string {
-        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
             return `"${value.replace(/"/g, '""')}"`;
         }
         return value;
@@ -629,6 +643,14 @@ export class ReportsView extends ItemView {
             a.startDateTime.getTime() - b.startDateTime.getTime()
         );
 
+        const summary = ReportAggregator.calculateCategoryReport({
+            entries,
+            schema,
+            rangeStart: start,
+            rangeEnd: end,
+            getEffectiveDuration: (entry, s, e) => this.dataManager.getEffectiveDuration(entry, s, e),
+        });
+
         const exportData = {
             exportedAt: new Date().toISOString(),
             dateRange: {
@@ -636,9 +658,9 @@ export class ReportsView extends ItemView {
                 end: TableParser.getDateString(end),
             },
             totalEntries: sorted.length,
-            activeDays: this.reportSummary.activeDaysCount,
-            categoriesTracked: this.reportSummary.categoriesCount,
-            categories: this.reportSummary.items.map(cat => ({
+            activeDays: summary.activeDaysCount,
+            categoriesTracked: summary.categoriesCount,
+            categories: summary.items.map(cat => ({
                 category: cat.category,
                 timeSpentMinutes: cat.totalMinutes,
                 percentageOfTime: cat.percentageOfTime,

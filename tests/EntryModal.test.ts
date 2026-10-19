@@ -331,4 +331,60 @@ describe('EntryModal Dynamic Schema', () => {
             expect(eveChip.classList.contains('is-selected')).toBe(true);
         });
     });
+
+    describe('midnight rollover & enum label normalization', () => {
+        it('advances endDateValue to next day when default +1 hour wraps past midnight', () => {
+            const modal = new EntryModal(
+                {} as App,
+                DEFAULT_SETTINGS,
+                dataManager,
+                { mode: 'create', date: new Date(2025, 11, 1), startTime: '23:30' },
+                () => {}
+            );
+
+            expect(modal['startDateValue']).toBe('2025-12-01');
+            expect(modal['startTimeValue']).toBe('23:30');
+            expect(modal['endDateValue']).toBe('2025-12-02');
+            expect(modal['endTimeValue']).toBe('00:30');
+            expect(modal['durationValue']).toBe('1h');
+        });
+
+        it('stores canonical option label when selecting an option with a slug ID in dropdown', () => {
+            const slugSchema: TrackingSchemaConfig = {
+                ...testSchema,
+                fields: testSchema.fields.map(f =>
+                    f.id === 'category'
+                        ? {
+                            ...f,
+                            options: [
+                                { id: 'deep-work', label: 'Deep Work' },
+                                { id: 'shallow-work', label: 'Shallow Work' },
+                            ],
+                        }
+                        : f
+                ),
+            };
+            const slugDataManager = {
+                ...dataManager,
+                getSchema: () => slugSchema,
+            } as unknown as DataManager;
+
+            const modal = new EntryModal(
+                {} as App,
+                DEFAULT_SETTINGS,
+                slugDataManager,
+                { mode: 'create', date: new Date(2025, 11, 1), startTime: '09:00', endTime: '10:00' },
+                () => {}
+            );
+
+            modal.onOpen();
+
+            const selectEl = modal.contentEl.querySelector('select.dropdown') as HTMLSelectElement;
+            expect(selectEl).toBeDefined();
+            selectEl.value = 'shallow-work';
+            selectEl.dispatchEvent(new dom.window.Event('change'));
+
+            expect(modal['fieldValues']['category']).toBe('Shallow Work');
+        });
+    });
 });

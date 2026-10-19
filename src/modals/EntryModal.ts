@@ -199,10 +199,10 @@ export class EntryModal extends Modal {
 
             // Calculate end date/time
             if (data.endTime) {
-                // From drag selection - check if end < start (spans midnight)
+                // From drag selection - check if end <= start (spans midnight)
                 const startMins = this.timeToMinutes(this.startTimeValue);
                 const endMins = this.timeToMinutes(data.endTime);
-                if (endMins < startMins) {
+                if (endMins <= startMins) {
                     // Spans midnight - end date is next day
                     const nextDay = new Date(date);
                     nextDay.setDate(nextDay.getDate() + 1);
@@ -212,9 +212,17 @@ export class EntryModal extends Modal {
                 }
                 this.endTimeValue = data.endTime;
             } else {
-                // Default +1 hour
-                this.endDateValue = this.startDateValue;
+                // Default +1 hour (advance endDate if wrapping past midnight)
                 this.endTimeValue = this.addHourToTime(this.startTimeValue);
+                const startMins = this.timeToMinutes(this.startTimeValue);
+                const endMins = this.timeToMinutes(this.endTimeValue);
+                if (endMins <= startMins) {
+                    const nextDay = new Date(date);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    this.endDateValue = TableParser.getDateString(nextDay);
+                } else {
+                    this.endDateValue = this.startDateValue;
+                }
             }
 
             this.durationValue = this.calculateDurationFromDates();
@@ -232,7 +240,7 @@ export class EntryModal extends Modal {
                     this.fieldValues[field.id] = field.defaultValue;
                 } else if (field.type === 'enum' && field.options && field.options.length > 0) {
                     if (field.required) {
-                        this.fieldValues[field.id] = field.options[0].id;
+                        this.fieldValues[field.id] = field.options[0].label;
                     } else {
                         this.fieldValues[field.id] = '';
                     }
@@ -434,10 +442,16 @@ export class EntryModal extends Modal {
                     const matchingOpt = field.options?.find(
                         o => o.id === currentVal || o.label.toLowerCase() === currentVal.toLowerCase()
                     );
+                    if (matchingOpt) {
+                        this.fieldValues[field.id] = matchingOpt.label;
+                    }
                     const selectedId = matchingOpt ? matchingOpt.id : currentVal;
                     dropdown.setValue(selectedId);
                     dropdown.onChange((val) => {
-                        this.fieldValues[field.id] = val;
+                        const selectedOpt = field.options?.find(
+                            o => o.id === val || o.label.toLowerCase() === val.toLowerCase()
+                        );
+                        this.fieldValues[field.id] = selectedOpt ? selectedOpt.label : val;
                     });
                 });
             }
@@ -474,7 +488,7 @@ export class EntryModal extends Modal {
                     btn.setButtonText('Create new')
                         .setTooltip('Create a new linked note')
                         .onClick(() => {
-                            this.showCreateNoteInput(container, noteInput);
+                            this.showCreateNoteInput(container, noteInput, field.id);
                         });
                 });
             } else if (field.multiple) {
@@ -953,7 +967,7 @@ export class EntryModal extends Modal {
     private getCurrentTimeRounded(): string {
         const now = new Date();
         const minutes = Math.round(now.getMinutes() / 15) * 15;
-        const hours = now.getHours() + (minutes >= 60 ? 1 : 0);
+        const hours = (now.getHours() + (minutes >= 60 ? 1 : 0)) % 24;
         const adjustedMinutes = minutes % 60;
 
         return `${hours.toString().padStart(2, '0')}:${adjustedMinutes.toString().padStart(2, '0')}`;
@@ -1032,7 +1046,14 @@ export class EntryModal extends Modal {
      */
     private updateEndFromDuration(): void {
         const durationMins = this.parseDurationToMinutes(this.durationValue);
-        if (durationMins <= 0) return;
+        if (durationMins <= 0) {
+            this.hasInvalidDuration = true;
+            if (this.durationInput) {
+                this.durationInput.inputEl.toggleClass('time-input-error', true);
+            }
+            this.updateOverlapUI();
+            return;
+        }
 
         const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
         if (!Number.isFinite(start.getTime())) return;
@@ -1088,7 +1109,7 @@ export class EntryModal extends Modal {
     /**
      * Show the create note input UI
      */
-    private showCreateNoteInput(contentEl: HTMLElement, linkedNoteInput: TextComponent): void {
+    private showCreateNoteInput(contentEl: HTMLElement, linkedNoteInput: TextComponent, fieldId: string = 'notes'): void {
         // Create inline input row
         const createNoteRow = contentEl.createDiv('create-note-row');
 
@@ -1139,6 +1160,7 @@ export class EntryModal extends Modal {
 
             void this.createLinkedNote(noteName).then((notePath) => {
                 linkedNoteInput.setValue(notePath);
+                this.fieldValues[fieldId] = notePath;
                 this.linkedNoteValue = notePath;
                 createNoteRow.remove();
                 new Notice('Note created!');
